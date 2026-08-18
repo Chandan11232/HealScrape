@@ -30,4 +30,5 @@ Thumbs.db
 chroma_db/
 *.db
 data/
-scraped_data/
+processed/
+raw/
