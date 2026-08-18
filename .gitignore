@@ -1,0 +1,33 @@
+# Environment variables
+.env
+.env.local
+.env*.local
+
+# Secrets
+backend/app/config.py
+backend/.env
+
+# Node/Python
+node_modules/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data
+chroma_db/
+*.db
+data/
+scraped_data/
