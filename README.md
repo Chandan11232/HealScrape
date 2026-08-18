@@ -7,9 +7,11 @@
 cp backend/.env.example backend/.env
 ```
 
-2. Add your credentials:
-BRIGHT_DATA_API_KEY=your_actual_key_here
-BRIGHT_DATA_ACCOUNT_ID=your_account_id_here
+2. Add your credentials to `backend/.env`:
+```
+BRIGHTDATA_API_KEY=your_actual_key_here
+BRIGHTDATA_SCRAPERS={"theverge": "c_your_collector_id", ...}
+```
 
 3. Install dependencies:
 ```bash
@@ -28,8 +30,8 @@ uvicorn app.main:app --reload
 
 1. Install dependencies:
 ```bash
-cd frontend
-npm install react-router-dom lucide-react --legacy-peer-deps
+cd frontend-react
+npm install
 ```
 
 2. Start dev server:

@@ -1,0 +1,185 @@
+"""
+Normalizes Bright Data / Firecrawl / Tavily outputs into one schema
+so the RAG pipeline never has to care which source a document came from.
+"""
+from dataclasses import dataclass, asdict
+import json
+from pathlib import Path
+from app.config import settings
+
+
+@dataclass
+class NormalizedDoc:
+    source: str          # "brightdata" | "firecrawl" | "tavily"
+    url: str
+    title: str
+    content: str
+    metadata: dict
+
+
+def _strip_html(html: str) -> str:
+    """Strip HTML tags and unescape entities — no bs4 dependency needed."""
+    import re
+    from html import unescape
+    if not html:
+        return ""
+    text = re.sub(r"<[^>]+>", " ", html)
+    text = unescape(text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _stringify_list(items) -> str:
+    """Safely join a list that might contain strings, dicts, or mixed types."""
+    if not items:
+        return ""
+    parts = []
+    for item in items:
+        if isinstance(item, str):
+            parts.append(item)
+        elif isinstance(item, dict):
+            # common shapes: {"text": ...}, {"code": ...}, {"content": ...}
+            parts.append(
+                item.get("code") or item.get("text") or item.get("content")
+                or item.get("description") or json.dumps(item)
+            )
+        else:
+            parts.append(str(item))
+    return "\n".join(parts)
+
+
+def from_brightdata(records: list[dict]) -> list[NormalizedDoc]:
+    docs = []
+    for r in records:
+        # Different collectors produce different schemas. Handle common shapes:
+        url = r.get("url") or r.get("product_page_url") or r.get("input", {}).get("url", "")
+
+        title = (
+            r.get("title") or r.get("section_title") or r.get("job_title")
+            or r.get("page_title") or r.get("headline") or r.get("hackathon_title") or ""
+        )
+
+        content = r.get("text") or r.get("content") or ""
+
+        if not content and "content_paragraphs" in r:
+            # Section-based docs scrapers (e.g. Python docs)
+            content = "\n\n".join(r.get("content_paragraphs", []))
+
+        if not content and "description" in r and "job_title" in r:
+            # Job-listing scrapers (e.g. RemoteOK)
+            parts = []
+            if r.get("job_title"):
+                parts.append(f"Job Title: {r['job_title']}")
+            if r.get("company_name"):
+                parts.append(f"Company: {r['company_name']}")
+            if r.get("location"):
+                parts.append(f"Location: {r['location']}")
+            if r.get("tags"):
+                parts.append(f"Tags: {_stringify_list(r['tags'])}")
+            if r.get("description"):
+                parts.append(f"Description: {r['description']}")
+            content = "\n".join(parts)
+
+        if not content and "main_content" in r:
+            # Docs/product pages with structured sections (e.g. FastAPI/tiangolo)
+            parts = [r.get("main_content", "")]
+            if r.get("section_headings"):
+                parts.append("Sections: " + _stringify_list(r["section_headings"]))
+            if r.get("feature_descriptions"):
+                parts.append(_stringify_list(r["feature_descriptions"]))
+            if r.get("code_examples"):
+                parts.append(_stringify_list(r["code_examples"]))
+            content = "\n\n".join(p for p in parts if p)
+
+        if not content and "article_content" in r and "article_title" in r:
+            # Encyclopedia/wiki-style scrapers (e.g. Wikipedia) — content is raw HTML
+            parts = []
+            if r.get("short_description"):
+                parts.append(f"Summary: {r['short_description']}")
+            parts.append(_strip_html(r.get("article_content", "")))
+            if r.get("categories"):
+                parts.append("Categories: " + _stringify_list(r["categories"]))
+            content = "\n\n".join(p for p in parts if p)
+
+        if not content and "article_content" in r and "headline" in r:
+            # News article scrapers (e.g. VentureBeat)
+            parts = []
+            if r.get("headline"):
+                parts.append(f"Headline: {r['headline']}")
+            if r.get("author"):
+                parts.append(f"Author: {r['author']}")
+            if r.get("publish_date"):
+                parts.append(f"Published: {r['publish_date']}")
+            parts.append(r.get("article_content", ""))
+            content = "\n".join(p for p in parts if p)
+
+        if not content and "tagline" in r and "hackathon_title" in r:
+            # Hackathon listing scrapers (e.g. Devpost)
+            parts = []
+            if r.get("hackathon_title"):
+                parts.append(f"Hackathon: {r['hackathon_title']}")
+            if r.get("tagline"):
+                parts.append(f"Tagline: {r['tagline']}")
+            if r.get("organizer"):
+                parts.append(f"Organizer: {r['organizer']}")
+            if r.get("deadline"):
+                parts.append(f"Deadline: {r['deadline']}")
+            if r.get("total_prize_amount"):
+                parts.append(f"Prize: {r['total_prize_amount']}")
+            if r.get("participant_count"):
+                parts.append(f"Participants: {r['participant_count']}")
+            if r.get("themes"):
+                parts.append("Themes: " + _stringify_list(r["themes"]))
+            if r.get("description"):
+                parts.append(f"Description: {r['description']}")
+            content = "\n".join(parts)
+
+        docs.append(NormalizedDoc(
+            source="brightdata",
+            url=url,
+            title=title,
+            content=content,
+            metadata={k: v for k, v in r.items() if k not in (
+                "url", "title", "text", "content", "content_paragraphs", "input",
+                "job_title", "description", "main_content", "section_headings",
+                "feature_descriptions", "code_examples", "article_content",
+                "headline", "author", "publish_date", "hackathon_title",
+                "tagline", "organizer", "deadline", "total_prize_amount",
+                "participant_count", "themes",
+            )},
+        ))
+    return docs
+
+
+def from_firecrawl(records: list[dict]) -> list[NormalizedDoc]:
+    docs = []
+    for r in records:
+        meta = r.get("metadata", {})
+        docs.append(NormalizedDoc(
+            source="firecrawl",
+            url=meta.get("sourceURL", ""),
+            title=meta.get("title", ""),
+            content=r.get("markdown", ""),
+            metadata=meta,
+        ))
+    return docs
+
+
+def from_tavily(response: dict) -> list[NormalizedDoc]:
+    docs = []
+    for r in response.get("results", []):
+        docs.append(NormalizedDoc(
+            source="tavily",
+            url=r.get("url", ""),
+            title=r.get("title", ""),
+            content=r.get("content", ""),
+            metadata={"score": r.get("score")},
+        ))
+    return docs
+
+
+def save_normalized(docs: list[NormalizedDoc], job_tag: str) -> Path:
+    Path(settings.PROCESSED_DATA_DIR).mkdir(parents=True, exist_ok=True)
+    out_path = Path(settings.PROCESSED_DATA_DIR) / f"normalized_{job_tag}.json"
+    out_path.write_text(json.dumps([asdict(d) for d in docs], indent=2))
+    return out_path
