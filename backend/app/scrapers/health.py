@@ -9,6 +9,12 @@ from typing import Any
 
 from app.config import settings
 
+PLACEHOLDER_HEALTH = {
+    "empty_title_pct": 100.0,
+    "empty_body_pct": 100.0,
+    "success_rate": 0.0,
+}
+
 
 def _field(record: dict[str, Any], *keys: str) -> str:
     for key in keys:
@@ -18,21 +24,41 @@ def _field(record: dict[str, Any], *keys: str) -> str:
     return ""
 
 
+def is_placeholder(metrics: dict) -> bool:
+    return (
+        float(metrics.get("success_rate", 0)) == 0.0
+        and float(metrics.get("empty_title_pct", 0)) == 100.0
+        and float(metrics.get("empty_body_pct", 0)) == 100.0
+    )
+
+
+def _title_body_rows(records: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """Map raw collector rows through the same normalizer the scrape path uses."""
+    if not records:
+        return []
+    sample = records[0]
+    already_normalized = sample.get("source") in ("brightdata", "firecrawl", "tavily")
+    if already_normalized:
+        return [
+            {"title": _field(r, "title"), "content": _field(r, "content", "body", "text")}
+            for r in records
+        ]
+
+    from app.scrapers.normalizer import from_brightdata
+    docs = from_brightdata(records)
+    return [{"title": d.title, "content": d.content} for d in docs]
+
+
 def calculate_health_metrics(records: list[dict[str, Any]]) -> dict[str, float]:
     """empty_title_pct / empty_body_pct / success_rate from normalized or raw rows."""
-    if not records:
-        return {
-            "empty_title_pct": 100.0,
-            "empty_body_pct": 100.0,
-            "success_rate": 0.0,
-        }
+    rows = _title_body_rows(records)
+    if not rows:
+        return dict(PLACEHOLDER_HEALTH)
 
-    total = len(records)
-    titles = [_field(r, "title", "headline", "job_title", "hackathon_title", "page_title") for r in records]
-    bodies = [_field(r, "content", "body", "text", "article_content", "description") for r in records]
-    empty_title = sum(1 for t in titles if not t)
-    empty_body = sum(1 for b in bodies if not b)
-    successful = sum(1 for t, b in zip(titles, bodies) if t and b)
+    total = len(rows)
+    empty_title = sum(1 for r in rows if not r["title"])
+    empty_body = sum(1 for r in rows if not r["content"])
+    successful = sum(1 for r in rows if r["title"] and r["content"])
 
     return {
         "empty_title_pct": round((empty_title / total) * 100, 2),

@@ -14,7 +14,8 @@ from app.rag.embedder import embed_texts
 _client = None
 _collection = None
 
-COLLECTION_NAME = "hackathon_docs"
+COLLECTION_NAME = "hackathon_docs_cosine"
+COLLECTION_METADATA = {"hnsw:space": "cosine"}
 
 
 def get_client():
@@ -31,7 +32,10 @@ def get_collection():
     global _collection
     if _collection is None:
         client = get_client()
-        _collection = client.get_or_create_collection(name=COLLECTION_NAME)
+        _collection = client.get_or_create_collection(
+            name=COLLECTION_NAME,
+            metadata=COLLECTION_METADATA,
+        )
     return _collection
 
 
@@ -41,24 +45,60 @@ def add_chunks(chunks: list[Chunk]) -> int:
         return 0
 
     collection = get_collection()
-    texts = [c.text for c in chunks]
-    embeddings = embed_texts(texts)
+    batch = settings.CHROMA_UPSERT_BATCH
 
-    collection.upsert(
-        ids=[c.chunk_id for c in chunks],
-        embeddings=embeddings,
-        documents=texts,
-        metadatas=[{
-            "doc_url": c.doc_url,
-            "doc_title": c.doc_title,
-            "source": c.source,
-            "chunk_index": c.chunk_index,
-        } for c in chunks],
-    )
+    for start in range(0, len(chunks), batch):
+        end = start + batch
+        slice_chunks = chunks[start:end]
+        embeddings = embed_texts([c.text for c in slice_chunks])
+        collection.upsert(
+            ids=[c.chunk_id for c in slice_chunks],
+            embeddings=embeddings,
+            documents=[c.text for c in slice_chunks],
+            metadatas=[{
+                "doc_url": c.doc_url,
+                "doc_title": c.doc_title,
+                "source": c.source,
+                "domain": c.domain,
+                "chunk_index": c.chunk_index,
+            } for c in slice_chunks],
+        )
     return len(chunks)
 
 
-def query(query_text: str, top_k: int = 5, source_filter: str | None = None) -> list[dict]:
+def _normalize_filters(source_filter: str | list[str] | None) -> list[str]:
+    if not source_filter:
+        return []
+    if isinstance(source_filter, str):
+        if source_filter in ("brightdata", "firecrawl", "tavily"):
+            return [source_filter]
+        return [source_filter.removeprefix("www.")]
+    return [d.removeprefix("www.") for d in source_filter]
+
+
+def _where_filter(source_filter: str | list[str] | None) -> dict | None:
+    filters = _normalize_filters(source_filter)
+    if not filters:
+        return None
+    if filters[0] in ("brightdata", "firecrawl", "tavily") and len(filters) == 1:
+        return {"source": filters[0]}
+    if len(filters) == 1:
+        return {"domain": filters[0]}
+    return {"domain": {"$in": filters}}
+
+
+def _hit_matches_domains(hit: dict, domains: list[str]) -> bool:
+    meta = hit.get("metadata") or {}
+    url = (meta.get("doc_url") or "").lower()
+    host = (meta.get("domain") or "").lower()
+    return any(d in url or host == d for d in domains)
+
+
+def query(
+    query_text: str,
+    top_k: int = 5,
+    source_filter: str | list[str] | None = None,
+) -> list[dict]:
     """Returns top_k most relevant chunks with metadata + distance score."""
     collection = get_collection()
     total = collection.count()
@@ -66,16 +106,43 @@ def query(query_text: str, top_k: int = 5, source_filter: str | None = None) -> 
         return []
 
     query_embedding = embed_texts([query_text])[0]
-    where = {"source": source_filter} if source_filter else None
-    n_results = min(top_k, total)
+    domains = [
+        d for d in _normalize_filters(source_filter)
+        if d not in ("brightdata", "firecrawl", "tavily")
+    ]
+    where = _where_filter(source_filter)
+    if where:
+        fetch_n = min(total, max(top_k, 20))
+    elif domains:
+        fetch_n = min(total, max(top_k * 40, 800))
+    else:
+        fetch_n = min(top_k, total)
 
-    results = collection.query(
-        query_embeddings=[query_embedding],
-        n_results=n_results,
-        where=where,
-    )
+    kwargs = {
+        "query_embeddings": [query_embedding],
+        "n_results": fetch_n,
+    }
+    if where:
+        kwargs["where"] = where
+
+    try:
+        results = collection.query(**kwargs)
+    except Exception:
+        if not where:
+            raise
+        results = collection.query(
+            query_embeddings=[query_embedding],
+            n_results=fetch_n,
+        )
 
     ids = results.get("ids") or [[]]
+    if where and (not ids or not ids[0]):
+        results = collection.query(
+            query_embeddings=[query_embedding],
+            n_results=min(total, max(top_k * 40, 800)),
+        )
+        ids = results.get("ids") or [[]]
+
     if not ids or not ids[0]:
         return []
 
@@ -87,7 +154,10 @@ def query(query_text: str, top_k: int = 5, source_filter: str | None = None) -> 
             "metadata": results["metadatas"][0][i],
             "distance": results["distances"][0][i],
         })
-    return hits
+
+    if domains:
+        hits = [h for h in hits if _hit_matches_domains(h, domains)]
+    return hits[:top_k]
 
 
 def collection_stats() -> dict:

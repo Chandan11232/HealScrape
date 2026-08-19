@@ -13,7 +13,14 @@ from fastapi import APIRouter, HTTPException
 
 from app.config import settings
 from app.models.heal_schemas import HealRequest, HealResponse, HealthMetrics
-from app.scrapers.health import get_current_health, issue_prompt, needs_heal, calculate_health_metrics
+from app.scrapers.health import (
+    get_current_health,
+    issue_prompt,
+    needs_heal,
+    calculate_health_metrics,
+    is_placeholder,
+    PLACEHOLDER_HEALTH,
+)
 from app.scrapers.scrape_runner import run_brightdata_scrape
 from app.scrapers.self_heal import (
     trigger_heal,
@@ -66,11 +73,17 @@ def _set_job(job_tag: str, **updates) -> None:
 
 def _finish_with_metrics(job_tag: str, after: HealthMetrics, message: str) -> None:
     before = heal_jobs[job_tag]["before"]
-    improved = (
-        after.empty_title_pct < before.empty_title_pct
-        or after.empty_body_pct < before.empty_body_pct
-        or after.success_rate > before.success_rate
-    )
+    before_dict = before.model_dump()
+    after_dict = after.model_dump()
+    if is_placeholder(before_dict):
+        improved = after.success_rate > 0 and after.empty_body_pct < 100
+    else:
+        improved = after.success_rate > before.success_rate or (
+            after.empty_title_pct < before.empty_title_pct
+            and after.empty_body_pct < before.empty_body_pct
+        )
+    if is_placeholder(after_dict) and not is_placeholder(before_dict):
+        improved = False
     _set_job(
         job_tag,
         status="completed",
@@ -124,7 +137,7 @@ def _diagnose_sync(job_tag: str) -> None:
             timeout=settings.HEAL_SCRAPE_TIMEOUT,
         )
     except Exception as e:
-        metrics = {"empty_title_pct": 100.0, "empty_body_pct": 100.0, "success_rate": 0.0}
+        metrics = dict(PLACEHOLDER_HEALTH)
         _set_job(job_tag, message=f"Diagnose scrape failed ({e}); still sending collector to Bright Data heal.")
 
     before = _metrics(metrics)
@@ -308,7 +321,36 @@ def start_heal_job(
         )
 
     url_list = urls or ([test_url] if test_url else [])
-    before_metrics = before or _metrics(get_current_health(job_tag))
+    stored = get_current_health(job_tag)
+    before_metrics = before or _metrics(stored)
+    has_real_before = before is not None or not is_placeholder(stored)
+    stored_or_before = before.model_dump() if before else stored
+
+    if not force_heal and has_real_before and not needs_heal(stored_or_before):
+        heal_jobs[job_tag] = {
+            "status": "completed",
+            "phase": "done",
+            "step": "done",
+            "message": (
+                f"Collector already healthy (success {before_metrics.success_rate}%). "
+                "Skipped Bright Data heal."
+            ),
+            "heal_job_id": collector_id,
+            "collector_id": collector_id,
+            "scraper_name": scraper_name,
+            "issue_description": issue_description.strip(),
+            "test_url": test_url,
+            "urls": url_list,
+            "before": before_metrics,
+            "after": before_metrics,
+            "improved": False,
+            "approved": False,
+            "force_heal": force_heal,
+            "rescrape_after": rescrape_after,
+            "started_at": time.time(),
+        }
+        return _to_response(job_tag)
+
     prompt = issue_description.strip() or issue_prompt(
         {
             "empty_title_pct": before_metrics.empty_title_pct,
@@ -317,14 +359,15 @@ def start_heal_job(
         }
     )
 
-    initial_phase = "trigger" if skip_diagnose else "diagnose"
+    # Skip a second scrape when this job_tag already has real normalized metrics.
+    initial_phase = "trigger" if (skip_diagnose or has_real_before) else "diagnose"
     heal_jobs[job_tag] = {
         "status": "healing",
         "phase": initial_phase,
-        "step": "queued" if skip_diagnose else "diagnosing",
+        "step": "queued" if initial_phase == "trigger" else "diagnosing",
         "message": (
-            "Heal job queued — starting Bright Data AI..."
-            if skip_diagnose
+            "Starting Bright Data heal on the same collector..."
+            if initial_phase == "trigger"
             else "Queued — will scrape, then heal the same collector if needed."
         ),
         "heal_job_id": collector_id,
@@ -367,10 +410,21 @@ async def get_heal_status(job_tag: str):
     return _to_response(job_tag)
 
 
+_ZERO = HealthMetrics(empty_title_pct=0.0, empty_body_pct=0.0, success_rate=0.0)
+
+
 @router.post("/heal/{job_tag}/cancel", response_model=HealResponse)
 async def cancel_heal(job_tag: str):
     if job_tag not in heal_jobs:
-        raise HTTPException(status_code=404, detail=f"Job {job_tag} not found")
+        return HealResponse(
+            status="failed",
+            job_tag=job_tag,
+            before=_ZERO,
+            after=None,
+            improved=False,
+            message="No active heal job (already gone or server restarted).",
+            step="failed",
+        )
     _set_job(
         job_tag,
         status="failed",

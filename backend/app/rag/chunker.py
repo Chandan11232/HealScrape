@@ -3,6 +3,7 @@ Splits normalized documents into chunks small enough to embed well
 and retrieve precisely. Pure Python, no API calls — free.
 """
 from dataclasses import dataclass
+from urllib.parse import urlparse
 import re
 
 
@@ -12,8 +13,14 @@ class Chunk:
     doc_url: str
     doc_title: str
     source: str
+    domain: str
     text: str
     chunk_index: int
+
+
+def _domain(url: str) -> str:
+    host = urlparse(url or "").hostname or ""
+    return host.removeprefix("www.")
 
 
 def _split_sentences(text: str) -> list[str]:
@@ -56,13 +63,16 @@ def chunk_documents(docs: list[dict], chunk_size: int = 800, overlap: int = 150)
         text_chunks = chunk_text(doc.get("content", ""), chunk_size, overlap)
         # Use doc_index in the ID so multiple docs sharing the same URL
         # (e.g. per-section scrapes of one page) never collide in the vector store.
-        doc_key = f"{doc.get('url', 'unknown')}#{doc_index}"
+        doc_url = doc.get("url", "")
+        doc_key = f"{doc_url or 'unknown'}#{doc_index}"
+        domain = _domain(doc_url)
         for i, text in enumerate(text_chunks):
             all_chunks.append(Chunk(
                 chunk_id=f"{doc_key}::{i}",
-                doc_url=doc.get("url", ""),
+                doc_url=doc_url,
                 doc_title=doc.get("title", ""),
                 source=doc.get("source", ""),
+                domain=domain,
                 text=text,
                 chunk_index=i,
             ))

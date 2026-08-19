@@ -63,3 +63,4 @@ class KnowledgeResponse(BaseModel):
     chunk_count: int
     indexed_domains: list[str]
     sources: list[dict]
+    scraper_names: list[str] = []

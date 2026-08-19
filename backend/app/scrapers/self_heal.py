@@ -41,6 +41,9 @@ def progress_message(data: dict) -> str:
     return f"Heal status: {status or 'unknown'}"
 
 
+_async_client: httpx.AsyncClient | None = None
+
+
 def _headers() -> dict:
     return {"Authorization": f"Bearer {BRIGHTDATA_API_KEY}"}
 
@@ -49,15 +52,21 @@ def _progress_url(collector_id: str) -> str:
     return f"{BRIGHTDATA_BASE_URL}/dca/collectors/{collector_id}/refactor_template/progress"
 
 
+def _client() -> httpx.AsyncClient:
+    global _async_client
+    if _async_client is None or _async_client.is_closed:
+        _async_client = httpx.AsyncClient(timeout=30.0)
+    return _async_client
+
+
 async def fetch_heal_progress(collector_id: str) -> Dict[str, Any]:
     """Single progress check — no blocking loop."""
     if not BRIGHTDATA_API_KEY or collector_id.startswith("mock"):
         return {"status": "pending_answer", "step": "user_approval"}
 
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(_progress_url(collector_id), headers=_headers(), timeout=30.0)
-        resp.raise_for_status()
-        return resp.json()
+    resp = await _client().get(_progress_url(collector_id), headers=_headers())
+    resp.raise_for_status()
+    return resp.json()
 
 
 async def trigger_heal(
@@ -79,26 +88,24 @@ async def trigger_heal(
         prompt = f"{issue_description}\n\nTest against: {test_url}"
 
     url = f"{BRIGHTDATA_BASE_URL}/dca/collectors/{collector_id}/refactor_template"
-    async with httpx.AsyncClient() as client:
-        try:
-            resp = await client.post(
-                url,
-                json={"prompt": prompt[:1000], "custom_input": []},
-                headers=_headers(),
-                timeout=30.0,
-            )
-            resp.raise_for_status()
-            return {
-                "heal_job_id": collector_id,
-                "status": "pending_answer",
-                "message": f"Self-heal triggered for collector {collector_id}",
-            }
-        except Exception as e:
-            return {
-                "heal_job_id": None,
-                "status": "error",
-                "message": f"Failed to trigger heal: {e}",
-            }
+    try:
+        resp = await _client().post(
+            url,
+            json={"prompt": prompt[:1000], "custom_input": []},
+            headers=_headers(),
+        )
+        resp.raise_for_status()
+        return {
+            "heal_job_id": collector_id,
+            "status": "pending_answer",
+            "message": f"Self-heal triggered for collector {collector_id}",
+        }
+    except Exception as e:
+        return {
+            "heal_job_id": None,
+            "status": "error",
+            "message": f"Failed to trigger heal: {e}",
+        }
 
 
 async def poll_heal_status(
@@ -163,26 +170,24 @@ async def auto_approve_heal(collector_id: str) -> Dict[str, Any]:
         }
 
     url = f"{BRIGHTDATA_BASE_URL}/dca/collectors/{collector_id}/resume_automation_job"
-    async with httpx.AsyncClient() as client:
-        try:
-            resp = await client.post(
-                url,
-                json={"message": True, "auto_save": True},
-                headers=_headers(),
-                timeout=30.0,
-            )
-            resp.raise_for_status()
-            return {
-                "status": "approved",
-                "heal_job_id": collector_id,
-                "message": "Heal approved, applying fix...",
-            }
-        except Exception as e:
-            return {
-                "status": "error",
-                "heal_job_id": collector_id,
-                "message": f"Failed to approve heal: {e}",
-            }
+    try:
+        resp = await _client().post(
+            url,
+            json={"message": True, "auto_save": True},
+            headers=_headers(),
+        )
+        resp.raise_for_status()
+        return {
+            "status": "approved",
+            "heal_job_id": collector_id,
+            "message": "Heal approved, applying fix...",
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "heal_job_id": collector_id,
+            "message": f"Failed to approve heal: {e}",
+        }
 
 
 async def wait_for_completion(

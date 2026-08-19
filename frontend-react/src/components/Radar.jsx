@@ -1,13 +1,17 @@
 const SOURCES = [
-  { name: 'docs.python.org', top: '8%', left: '50%' },
-  { name: 'techcrunch.com', top: '22%', left: '85%' },
-  { name: 'theverge.com', top: '50%', left: '96%' },
-  { name: 'openai.com', top: '78%', left: '85%' },
-  { name: 'venturebeat.com', top: '92%', left: '50%' },
-  { name: 'remoteok.com', top: '78%', left: '15%' },
-  { name: 'devpost.com', top: '50%', left: '4%' },
-  { name: 'react.dev', top: '22%', left: '15%' },
-  { name: 'tiangolo.com', top: '12%', left: '28%' },
+  { name: 'en.wikipedia.org', top: '10%', left: '50%' },
+  { name: 'weather.com', top: '14.6%', left: '68.6%' },
+  { name: 'docs.python.org', top: '27.3%', left: '82.9%' },
+  { name: 'fastapi.tiangolo.com', top: '45.2%', left: '89.7%' },
+  { name: 'react.dev', top: '64.2%', left: '87.4%' },
+  { name: 'techcrunch.com', top: '80%', left: '76.5%' },
+  { name: 'theverge.com', top: '88.8%', left: '59.6%' },
+  { name: 'venturebeat.com', top: '88.8%', left: '40.4%' },
+  { name: 'openai.com', top: '80%', left: '23.5%' },
+  { name: 'devpost.com', top: '64.2%', left: '12.6%' },
+  { name: 'remoteok.com', top: '45.2%', left: '10.3%' },
+  { name: 'github.com', top: '27.3%', left: '17.1%' },
+  { name: 'huggingface.co', top: '14.6%', left: '31.4%' },
 ]
 
 export default function Radar({ size = 900 }) {
@@ -83,6 +87,7 @@ export default function Radar({ size = 900 }) {
         }
         @media (max-width: 720px) {
           .radar { width: 500px !important; height: 500px !important; }
+          .node-label { font-size: 8px; }
         }
       `}</style>
     </div>

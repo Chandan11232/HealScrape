@@ -236,7 +236,7 @@ body::after {
   color: var(--signal);
   position: relative;
   display: inline-block;
-  animation: glitch-skew 4s infinite linear alternate-reverse;
+  animation: glitch-skew 2.8s infinite linear alternate-reverse;
 }
 
 .glitch::before,
@@ -251,34 +251,66 @@ body::after {
 
 .glitch::before {
   color: #5FFFB4;
-  animation: glitch-1 3s infinite linear alternate-reverse;
+  animation: glitch-1 2.2s infinite linear alternate-reverse;
   clip-path: polygon(0 0, 100% 0, 100% 35%, 0 35%);
 }
 
 .glitch::after {
   color: #1DCC7A;
-  animation: glitch-2 2s infinite linear alternate-reverse;
+  animation: glitch-2 1.6s infinite linear alternate-reverse;
   clip-path: polygon(0 65%, 100% 65%, 100% 100%, 0 100%);
 }
 
 @keyframes glitch-1 {
-  0%, 90%, 100% { transform: translate(0); }
-  92% { transform: translate(-3px, 1px); }
-  94% { transform: translate(3px, -1px); }
-  96% { transform: translate(-2px, 0); }
+  0%, 72%, 100% { transform: translate(0); }
+  74% { transform: translate(-7px, 2px); }
+  76% { transform: translate(6px, -3px); }
+  78% { transform: translate(-5px, 1px); }
+  80% { transform: translate(8px, -2px); }
+  82% { transform: translate(-4px, 3px); }
+  84% { transform: translate(5px, -1px); }
+  86% { transform: translate(-6px, 0); }
+  88% { transform: translate(3px, 2px); }
+  90% { transform: translate(-3px, -2px); }
+  92% { transform: translate(7px, 1px); }
+  94% { transform: translate(-8px, -1px); }
+  96% { transform: translate(4px, 2px); }
+  98% { transform: translate(-5px, -2px); }
 }
 
 @keyframes glitch-2 {
-  0%, 90%, 100% { transform: translate(0); }
-  91% { transform: translate(2px, -1px); }
-  93% { transform: translate(-3px, 1px); }
-  95% { transform: translate(2px, 0); }
+  0%, 70%, 100% { transform: translate(0); }
+  72% { transform: translate(6px, -2px); }
+  74% { transform: translate(-7px, 3px); }
+  76% { transform: translate(5px, -1px); }
+  78% { transform: translate(-6px, 2px); }
+  80% { transform: translate(8px, 1px); }
+  82% { transform: translate(-4px, -3px); }
+  84% { transform: translate(7px, 2px); }
+  86% { transform: translate(-5px, -1px); }
+  88% { transform: translate(6px, -2px); }
+  90% { transform: translate(-8px, 1px); }
+  92% { transform: translate(4px, 3px); }
+  94% { transform: translate(-6px, -2px); }
+  96% { transform: translate(5px, 1px); }
+  98% { transform: translate(-7px, -1px); }
 }
 
 @keyframes glitch-skew {
-  0%, 90%, 100% { transform: skew(0deg); }
-  92% { transform: skew(-1deg); }
-  94% { transform: skew(1deg); }
+  0%, 72%, 100% { transform: skew(0deg) translate(0); }
+  74% { transform: skew(-2.5deg) translate(-2px, 1px); }
+  76% { transform: skew(2deg) translate(2px, -1px); }
+  78% { transform: skew(-3deg) translate(-1px, 2px); }
+  80% { transform: skew(2.5deg) translate(3px, 0); }
+  82% { transform: skew(-2deg) translate(-2px, -1px); }
+  84% { transform: skew(3deg) translate(1px, 1px); }
+  86% { transform: skew(-2.5deg) translate(-3px, 0); }
+  88% { transform: skew(2deg) translate(2px, -2px); }
+  90% { transform: skew(-3deg) translate(-1px, 1px); }
+  92% { transform: skew(2.5deg) translate(2px, 0); }
+  94% { transform: skew(-2deg) translate(-2px, -1px); }
+  96% { transform: skew(3deg) translate(1px, 2px); }
+  98% { transform: skew(-2.5deg) translate(-1px, -1px); }
 }
 
 /* ── Animations ── */

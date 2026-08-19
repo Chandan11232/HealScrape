@@ -8,12 +8,13 @@ import {
 } from 'lucide-react'
 
 const DOMAINS = [
-  'docs.python.org', 'fastapi.tiangolo.com', 'react.dev', 'techcrunch.com',
-  'theverge.com', 'venturebeat.com', 'openai.com', 'devpost.com', 'remoteok.com',
+  'en.wikipedia.org', 'weather.com', 'docs.python.org', 'fastapi.tiangolo.com',
+  'react.dev', 'techcrunch.com', 'theverge.com', 'venturebeat.com', 'openai.com',
+  'devpost.com', 'remoteok.com', 'github.com', 'huggingface.co',
 ]
 
 const STATS = [
-  { value: '9', label: 'Studio collectors' },
+  { value: '13', label: 'Studio collectors' },
   { value: '100%', label: 'Runs locally' },
   { value: '$0', label: 'Per query' },
   { value: '<3s', label: 'Avg response' },
@@ -36,7 +37,7 @@ const STEPS = [
     num: '03 / TRANSMIT',
     icon: Shield,
     title: 'Answer',
-    desc: 'Questions retrieve chunks from the nine collectors only. Off-topic prompts are refused so answers stay grounded in scraped pages.',
+    desc: 'Questions retrieve chunks from your Bright Data collectors (and live Open-Meteo for named-city weather). Off-topic prompts are refused.',
   },
 ]
 
@@ -82,7 +83,7 @@ export default function LandingEnhanced() {
       <section className="hero">
         <Radar />
         <div className="hero-content">
-          <div className="eyebrow mono fade-up">9 sources · live · zero cost</div>
+          <div className="eyebrow mono fade-up">13 sources · live · zero cost</div>
           <h1 className="mono fade-up fade-up-delay-1">
             THE WEB<br />
             IS <span className="glitch">TALKING.</span><br />
@@ -209,7 +210,7 @@ export default function LandingEnhanced() {
 
       <section className="footer-cta">
         <h2 className="mono">Ready to ask?</h2>
-        <p>Launch the console and ask the nine collectors — not the open web.</p>
+        <p>Launch the console and ask the collectors — not the open web.</p>
         <Link to="/console" className="btn btn-primary">
           Launch console <ArrowRight size={16} />
         </Link>

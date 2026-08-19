@@ -56,7 +56,8 @@ def from_brightdata(records: list[dict]) -> list[NormalizedDoc]:
 
         title = (
             r.get("title") or r.get("section_title") or r.get("job_title")
-            or r.get("page_title") or r.get("headline") or r.get("hackathon_title") or ""
+            or r.get("page_title") or r.get("headline") or r.get("hackathon_title")
+            or r.get("article_title") or r.get("location") or r.get("city") or ""
         )
 
         content = r.get("text") or r.get("content") or ""
@@ -134,6 +135,28 @@ def from_brightdata(records: list[dict]) -> list[NormalizedDoc]:
                 parts.append(f"Description: {r['description']}")
             content = "\n".join(parts)
 
+        if not content and any(
+            k in r for k in ("temperature", "temp", "current_temperature", "condition", "forecast")
+        ):
+            parts = []
+            loc = r.get("location") or r.get("city") or r.get("place")
+            if loc:
+                parts.append(f"Location: {loc}")
+            temp = r.get("temperature") or r.get("temp") or r.get("current_temperature")
+            if temp:
+                parts.append(f"Temperature: {temp}")
+            if r.get("condition") or r.get("weather"):
+                parts.append(f"Condition: {r.get('condition') or r.get('weather')}")
+            if r.get("humidity"):
+                parts.append(f"Humidity: {r['humidity']}")
+            if r.get("wind") or r.get("wind_speed"):
+                parts.append(f"Wind: {r.get('wind') or r.get('wind_speed')}")
+            if r.get("forecast"):
+                parts.append(f"Forecast: {_stringify_list(r['forecast']) if isinstance(r.get('forecast'), list) else r['forecast']}")
+            if r.get("description"):
+                parts.append(str(r["description"]))
+            content = "\n".join(str(p) for p in parts if p)
+
         docs.append(NormalizedDoc(
             source="brightdata",
             url=url,
@@ -145,7 +168,10 @@ def from_brightdata(records: list[dict]) -> list[NormalizedDoc]:
                 "feature_descriptions", "code_examples", "article_content",
                 "headline", "author", "publish_date", "hackathon_title",
                 "tagline", "organizer", "deadline", "total_prize_amount",
-                "participant_count", "themes",
+                "participant_count", "themes", "article_title", "location",
+                "city", "temperature", "temp", "current_temperature",
+                "condition", "forecast", "humidity", "wind", "wind_speed",
+                "weather", "place",
             )},
         ))
     return docs
@@ -181,5 +207,5 @@ def from_tavily(response: dict) -> list[NormalizedDoc]:
 def save_normalized(docs: list[NormalizedDoc], job_tag: str) -> Path:
     Path(settings.PROCESSED_DATA_DIR).mkdir(parents=True, exist_ok=True)
     out_path = Path(settings.PROCESSED_DATA_DIR) / f"normalized_{job_tag}.json"
-    out_path.write_text(json.dumps([asdict(d) for d in docs], indent=2))
+    out_path.write_text(json.dumps([asdict(d) for d in docs], separators=(",", ":")))
     return out_path

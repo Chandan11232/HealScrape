@@ -15,6 +15,7 @@ class TavilyClient:
         self.base_url = "https://api.tavily.com/search"
         self._calls_this_run = 0
         Path(settings.RAW_DATA_DIR).mkdir(parents=True, exist_ok=True)
+        self._http = httpx.Client(timeout=30)
 
     def search(self, query: str, job_tag: str, max_results: int = 5) -> dict:
         if self._calls_this_run >= settings.MAX_TAVILY_CALLS_PER_RUN:
@@ -24,7 +25,7 @@ class TavilyClient:
         if cache_file.exists():
             return json.loads(cache_file.read_text())
 
-        resp = httpx.post(
+        resp = self._http.post(
             self.base_url,
             json={
                 "api_key": self.api_key,
@@ -32,13 +33,12 @@ class TavilyClient:
                 "max_results": max_results,
                 "search_depth": "basic",  # "advanced" costs more credits — avoid unless needed
             },
-            timeout=30,
         )
         resp.raise_for_status()
         self._calls_this_run += 1
 
         data = resp.json()
-        cache_file.write_text(json.dumps(data, indent=2))
+        cache_file.write_text(json.dumps(data, separators=(",", ":")))
         return data
 
 

@@ -1,29 +1,22 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Navbar from './Navbar'
 import { Search, ExternalLink, Sparkles } from 'lucide-react'
 
 const API_BASE = 'http://localhost:8000'
 
-const TAGS = [
-  'docs.python.org',
-  'fastapi.tiangolo.com',
-  'react.dev',
-  'techcrunch.com',
-  'theverge.com',
-  'venturebeat.com',
-  'openai.com',
-  'devpost.com',
-  'remoteok.com',
-]
-
 const IN_SCOPE = [
-  'How do I use dependency injection in FastAPI?',
-  'What are React Server Components?',
-  'What is the latest AI news from TechCrunch?',
+  'How does dependency injection work in FastAPI?',
+  'What is Depends used for in FastAPI?',
+  'What does the scraped Python docs say about the list type?',
+  'What are React Server Components, according to the scraped react.dev pages?',
+  'What did the scraped TechCrunch or The Verge articles say about AI?',
+  'What is artificial intelligence, according to the Wikipedia page that was ingested?',
+  'What are the best efficient models according to huggingface?',
+  "What will tomorrow's weather be in Rupnagar?",
+  'What is the current weather in Delhi?',
 ]
 
 const OUT_OF_SCOPE = [
-  "What's the weather in Delhi?",
   'Who won the World Cup?',
 ]
 
@@ -41,12 +34,19 @@ export default function Console() {
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
   const [chunkCount, setChunkCount] = useState(null)
+  const [sourceFilter, setSourceFilter] = useState(null)
+  const [tags, setTags] = useState([
+    'en.wikipedia.org',
+    'weather.com',
+  ])
+  const abortRef = useRef(null)
 
   useEffect(() => {
     fetch(`${API_BASE}/knowledge`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data && typeof data.chunk_count === 'number') setChunkCount(data.chunk_count)
+        if (data?.indexed_domains?.length) setTags(data.indexed_domains)
       })
       .catch(() => {})
   }, [])
@@ -72,26 +72,43 @@ export default function Console() {
     setResult(null)
     setLoadingStep(0)
 
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
     try {
+      const body = { query: trimmed, top_k: 5 }
+      if (sourceFilter) body.source_filter = sourceFilter
       const res = await fetch(`${API_BASE}/query`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: trimmed, top_k: 5 }),
+        body: JSON.stringify(body),
+        signal: controller.signal,
       })
       if (!res.ok) throw new Error(`Server returned ${res.status}`)
       const data = await res.json()
       setResult(data)
     } catch (err) {
+      if (err.name === 'AbortError') return
       setError(err.message)
     } finally {
-      setLoading(false)
+      if (abortRef.current === controller) setLoading(false)
     }
+  }
+
+  function toggleSource(domain) {
+    setSourceFilter((current) => (current === domain ? null : domain))
+    setResult(null)
+    setError(null)
   }
 
   function applySuggestion(s) {
     setQuery(s)
     setResult(null)
     setError(null)
+    const lower = s.toLowerCase()
+    if (sourceFilter && !lower.includes(sourceFilter.replace('.com', '').split('.')[0]) && !lower.includes(sourceFilter)) {
+      setSourceFilter(null)
+    }
   }
 
   return (
@@ -101,10 +118,10 @@ export default function Console() {
       <div className="console-wrap">
         <header className="page-header">
           <div className="page-eyebrow mono">Web Intel Console</div>
-          <h1 className="page-title mono">Ask the nine collectors</h1>
+          <h1 className="page-title mono">Ask the collectors</h1>
           <p className="page-sub">
             This is a closed corpus, not web search. Answers come only from pages
-            already scraped by your Bright Data Scraper Studio collectors.
+            already scraped by your Bright Data collectors.
           </p>
         </header>
 
@@ -116,10 +133,20 @@ export default function Console() {
                 {chunkCount === 0 ? 'index empty — scrape + ingest first' : `${chunkCount} chunks`}
               </span>
             )}
+            {sourceFilter && (
+              <span className="chunk-count">filter: {sourceFilter}</span>
+            )}
           </div>
           <div className="sources-tags">
-            {TAGS.map((t) => (
-              <span className="tag tag-live" key={t}>{t}</span>
+            {tags.map((t) => (
+              <button
+                type="button"
+                className={`tag tag-live ${sourceFilter === t ? 'tag-selected' : ''}`}
+                key={t}
+                onClick={() => toggleSource(t)}
+              >
+                {t}
+              </button>
             ))}
           </div>
         </div>
@@ -131,7 +158,7 @@ export default function Console() {
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Ask about FastAPI, React, Python docs, or a scraped news page…"
+              placeholder="Ask about a scraped Wikipedia, weather, docs, or news page…"
               autoComplete="off"
             />
           </div>
@@ -232,8 +259,9 @@ export default function Console() {
           <div className="empty-console">
             <div className="empty-console-icon mono">&gt;_</div>
             <p>
-              Ask something those nine sites can answer. Off-topic questions are
-              refused on purpose so the model cannot invent coverage you never scraped.
+              {sourceFilter
+                ? `The ${sourceFilter} filter is on. Ask about that site, or click the chip again to search all collectors. FastAPI/React chips will not work while this filter is set.`
+                : 'Ask something those scraped sites can answer. Off-topic questions are refused on purpose so the model cannot invent coverage you never scraped.'}
             </p>
           </div>
         )}
@@ -266,6 +294,15 @@ export default function Console() {
           width: 100%;
         }
         .sources-tags { display: flex; flex-wrap: wrap; gap: 8px; }
+        .sources-tags .tag {
+          cursor: pointer;
+          background: transparent;
+        }
+        .sources-tags .tag-selected {
+          border-color: var(--signal);
+          color: var(--signal);
+          background: var(--signal-glow);
+        }
         .chunk-count {
           margin-left: auto;
           text-transform: none;

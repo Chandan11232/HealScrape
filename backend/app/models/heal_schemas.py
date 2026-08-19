@@ -7,7 +7,7 @@ from typing import Optional
 
 class HealRequest(BaseModel):
     """POST /heal request body."""
-    scraper_name: str = Field(..., description="Name of the scraper (e.g., 'theverge')")
+    scraper_name: str = Field(..., description="Name of the scraper (e.g., 'wikipedia_ai')")
     issue_description: str = Field("", description="What's broken; generated from metrics if empty")
     test_url: str = Field(..., description="URL to test the scraper against")
     job_tag: str = Field(..., description="Unique job tag for tracking")

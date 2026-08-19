@@ -4,6 +4,7 @@ pushes it through chunking + embedding into the local Chroma store.
 Kept separate from /scrape so you control exactly when embedding
 compute is spent.
 """
+import asyncio
 import json
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
@@ -16,14 +17,14 @@ router = APIRouter(prefix="/ingest", tags=["ingest"])
 
 
 @router.post("", response_model=IngestResponse)
-def ingest(req: IngestRequest):
+async def ingest(req: IngestRequest):
     path = Path(settings.PROCESSED_DATA_DIR) / f"normalized_{req.job_tag}.json"
     if not path.exists():
         raise HTTPException(status_code=404, detail=f"No normalized data found for job_tag '{req.job_tag}'. Run /scrape first.")
 
     docs = json.loads(path.read_text())
     try:
-        result = ingest_documents(docs)
+        result = await asyncio.to_thread(ingest_documents, docs)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ingest failed: {type(e).__name__}: {e}")
     return IngestResponse(**result)

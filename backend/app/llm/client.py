@@ -21,6 +21,11 @@ def generate(prompt: str, system: str | None = None) -> str:
         response = ollama.chat(
             model=settings.OLLAMA_MODEL,
             messages=messages,
+            options={
+                "temperature": 0,
+                "num_predict": settings.OLLAMA_NUM_PREDICT,
+                "num_ctx": settings.OLLAMA_NUM_CTX,
+            },
         )
     except (httpx.ConnectError, ConnectionError) as e:
         raise OllamaUnavailable(

@@ -12,6 +12,22 @@ const ACTIVE_JOB_KEY = "heal_active_job_tag";
 const HISTORY_KEY = "heal_job_history";
 const POLL_MS = 3000;
 
+const URL_HINTS = {
+  wikipedia_ai: "https://en.wikipedia.org/wiki/Dog",
+  weather: "https://weather.com/",
+  python: "https://docs.python.org/3/",
+  tiangolo: "https://fastapi.tiangolo.com/tutorial/dependencies/",
+  react: "https://react.dev/",
+  techcrunch: "https://techcrunch.com/",
+  theverge: "https://www.theverge.com/",
+  venturebeat: "https://venturebeat.com/",
+  openai: "https://openai.com/",
+  devpost: "https://devpost.com/hackathons",
+  remoteok: "https://remoteok.com/",
+  github: "https://github.com/",
+  huggingface: "https://huggingface.co/",
+};
+
 const STEP_LABELS = {
   queued: "Queued",
   diagnosing: "Scraping to measure health",
@@ -43,21 +59,23 @@ function saveHistory(history) {
 
 export default function HealDashboard() {
   const [formData, setFormData] = useState({
-    scraper_name: "theverge",
+    scraper_name: "",
     issue_description:
-      'The collector is not extracting an article title field. Add a "title" field that captures the article headline text from the page.',
-    test_url: "https://www.theverge.com/ai-artificial-intelligence",
+      "Re-capture title and main content from the current page markup. Keep the same output field names.",
+    test_url: "",
     job_tag: "",
   });
+  const [scraperNames, setScraperNames] = useState([]);
 
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [jobHistory, setJobHistory] = useState(loadHistory);
   const [diagnosing, setDiagnosing] = useState(false);
   const [rescrapeAfter, setRescrapeAfter] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const pollRef = useRef(null);
 
-  const isHealing = result?.status === "healing" || diagnosing;
+  const isHealing = (result?.status === "healing" || diagnosing) && !cancelling;
 
   const upsertHistory = useCallback((job) => {
     setJobHistory((prev) => {
@@ -94,7 +112,16 @@ export default function HealDashboard() {
       pollRef.current = setInterval(async () => {
         try {
           const data = await fetchJobStatus(jobTag);
-          if (!data) return;
+          if (!data) {
+            stopPolling();
+            localStorage.removeItem(ACTIVE_JOB_KEY);
+            setResult((prev) =>
+              prev?.status === "healing"
+                ? { ...prev, status: "failed", step: "failed", message: "Heal job lost after server restart." }
+                : prev,
+            );
+            return;
+          }
           setResult(data);
           setError(null);
           if (data.status !== "healing") {
@@ -119,6 +146,7 @@ export default function HealDashboard() {
       const data = await fetchJobStatus(jobTag);
       if (!data) {
         setResult(null);
+        setError(null);
         return;
       }
       setResult(data);
@@ -135,6 +163,15 @@ export default function HealDashboard() {
   }, [fetchJobStatus, startPolling, upsertHistory]);
 
   useEffect(() => {
+    fetch(`${API_BASE}/knowledge`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.scraper_names?.length) setScraperNames(data.scraper_names);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
     resumeActiveJob();
     return stopPolling;
   }, [resumeActiveJob, stopPolling]);
@@ -144,7 +181,8 @@ export default function HealDashboard() {
     setError(null);
     setDiagnosing(true);
 
-    const jobTag = formData.job_tag.trim() || `autoheal_${Date.now()}`;
+    const jobTag =
+      formData.job_tag.trim() || `${formData.scraper_name}_heal_${Date.now()}`;
     try {
       const res = await fetch(`${API_BASE}/heal`, {
         method: "POST",
@@ -177,7 +215,8 @@ export default function HealDashboard() {
     e.preventDefault();
     setError(null);
 
-    const jobTag = formData.job_tag.trim() || `demo_${Date.now()}`;
+    const jobTag =
+      formData.job_tag.trim() || `${formData.scraper_name}_heal_${Date.now()}`;
     const payload = {
       ...formData,
       job_tag: jobTag,
@@ -208,6 +247,14 @@ export default function HealDashboard() {
 
   function handleChange(e) {
     const { name, value } = e.target;
+    if (name === "scraper_name") {
+      setFormData((prev) => ({
+        ...prev,
+        scraper_name: value,
+        test_url: prev.test_url.trim() ? prev.test_url : (URL_HINTS[value] || prev.test_url),
+      }));
+      return;
+    }
     setFormData((prev) => ({ ...prev, [name]: value }));
   }
 
@@ -248,6 +295,38 @@ export default function HealDashboard() {
     );
   }
 
+  async function handleCancel() {
+    const jobTag = result?.job_tag;
+    if (!jobTag || cancelling) return;
+    setCancelling(true);
+    stopPolling();
+    localStorage.removeItem(ACTIVE_JOB_KEY);
+    try {
+      const res = await fetch(`${API_BASE}/heal/${jobTag}/cancel`, { method: "POST" });
+      const data = res.ok ? await res.json() : null;
+      setResult(
+        data || {
+          status: "failed",
+          job_tag: jobTag,
+          step: "failed",
+          message: "Heal cancelled. Job was already gone on the server.",
+          improved: false,
+        },
+      );
+      setError(null);
+    } catch (err) {
+      setResult({
+        status: "failed",
+        job_tag: jobTag,
+        step: "failed",
+        message: `Heal stopped locally (${err.message}).`,
+        improved: false,
+      });
+    } finally {
+      setCancelling(false);
+    }
+  }
+
   return (
     <div className="heal-dashboard">
       <header className="heal-header">
@@ -256,8 +335,8 @@ export default function HealDashboard() {
           <h1 className="mono">Scraper Self-Heal Lab</h1>
           <p className="heal-subtitle">
             Diagnose a collector, heal it in place with Bright Data AI, then
-            re-scrape the same <code>c_*</code> ID. Before/after numbers come from
-            real extraction, not placeholders.
+            re-scrape the same <code>c_*</code> ID. Scraper name can be any key
+            from <code>BRIGHTDATA_SCRAPERS</code> in <code>.env</code>.
           </p>
         </div>
       </header>
@@ -279,11 +358,18 @@ export default function HealDashboard() {
               <input
                 type="text"
                 name="scraper_name"
+                list="scraper-names"
                 value={formData.scraper_name}
                 onChange={handleChange}
-                placeholder="e.g., theverge, techcrunch"
+                placeholder="Any key from .env — e.g. tiangolo, theverge, wikipedia_ai"
                 className="form-input"
+                required
               />
+              <datalist id="scraper-names">
+                {scraperNames.map((name) => (
+                  <option key={name} value={name} />
+                ))}
+              </datalist>
             </div>
 
             <div className="form-group">
@@ -356,27 +442,14 @@ export default function HealDashboard() {
               )}
             </button>
 
-            {isHealing && result?.job_tag && (
+            {(isHealing || cancelling) && result?.job_tag && (
               <button
                 type="button"
                 className="cancel-heal-btn mono"
-                onClick={async () => {
-                  try {
-                    const res = await fetch(`${API_BASE}/heal/${result.job_tag}/cancel`, {
-                      method: "POST",
-                    });
-                    if (!res.ok) throw new Error(`Cancel failed (${res.status})`);
-                    const data = await res.json();
-                    stopPolling();
-                    localStorage.removeItem(ACTIVE_JOB_KEY);
-                    setResult(data);
-                    upsertHistory(data);
-                  } catch (err) {
-                    setError(err.message);
-                  }
-                }}
+                disabled={cancelling}
+                onClick={handleCancel}
               >
-                Cancel heal
+                {cancelling ? "Stopping…" : "Cancel heal"}
               </button>
             )}
           </form>

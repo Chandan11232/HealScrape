@@ -34,6 +34,7 @@ class BrightDataClient:
             "Content-Type": "application/json",
         }
         Path(settings.RAW_DATA_DIR).mkdir(parents=True, exist_ok=True)
+        self._http = httpx.Client(headers=self.headers, timeout=30)
 
     def _cache_path(self, job_tag: str) -> Path:
         return Path(settings.RAW_DATA_DIR) / f"brightdata_{job_tag}.json"
@@ -68,7 +69,7 @@ class BrightDataClient:
 
         collector_id = self._resolve_collector_id(scraper_name)
         url = f"{self.base_url}/trigger?collector={collector_id}&queue_next=1"
-        resp = httpx.post(url, headers=self.headers, json=inputs, timeout=30)
+        resp = self._http.post(url, json=inputs)
         if resp.status_code != 200:
             raise BrightDataError(f"Trigger failed: {resp.status_code} {resp.text}")
 
@@ -95,7 +96,7 @@ class BrightDataClient:
         elapsed = 0
 
         while elapsed < timeout:
-            resp = httpx.get(dataset_url, headers=self.headers, timeout=30)
+            resp = self._http.get(dataset_url)
 
             # 200 = ready (JSON array) or occasionally a status object.
             # 202 = still collecting — this is expected, not an error.
@@ -121,7 +122,7 @@ class BrightDataClient:
             if isinstance(body, list):
                 # Ready — could be empty [] if snapshot had no rows or expired
                 cache_file = self._cache_path(job_tag)
-                cache_file.write_text(json.dumps(body, indent=2))
+                cache_file.write_text(json.dumps(body, separators=(",", ":")))
                 return body
 
             # Still building — body is a status object like
