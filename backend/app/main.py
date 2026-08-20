@@ -4,7 +4,16 @@ Then open http://localhost:8000/docs for interactive Swagger UI —
 that's the easiest way to test every endpoint without writing curl commands.
 """
 import asyncio
+import logging
+import os
 from contextlib import asynccontextmanager
+
+# Chroma pulls in PostHog for anonymous telemetry. Newer posthog APIs break
+# capture() and spam the console on every client start — disable before import.
+os.environ["ANONYMIZED_TELEMETRY"] = "False"
+os.environ["CHROMA_TELEMETRY_DISABLED"] = "1"
+logging.getLogger("chromadb.telemetry").setLevel(logging.CRITICAL)
+logging.getLogger("chromadb.telemetry.product.posthog").setLevel(logging.CRITICAL)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

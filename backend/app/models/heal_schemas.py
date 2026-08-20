@@ -20,8 +20,11 @@ class HealRequest(BaseModel):
         description="If false, skip Bright Data heal when diagnose scrape already looks healthy",
     )
     rescrape_after: bool = Field(
-        False,
-        description="If true, run a second live scrape after heal (slow). Default skips it.",
+        True,
+        description=(
+            "Re-scrape after heal for live after-metrics (recommended). "
+            "If false, after-metrics come from Bright Data preview only when it maps to title/body."
+        ),
     )
 
 
@@ -37,9 +40,17 @@ class HealResponse(BaseModel):
     status: str = Field(..., description="'healing', 'completed', or 'failed'")
     job_tag: str = Field(..., description="Job tracking ID")
     before: HealthMetrics = Field(..., description="Health metrics before healing")
-    after: Optional[HealthMetrics] = Field(None, description="Health metrics after healing (null until complete)")
-    improved: bool = Field(..., description="Whether metrics improved")
+    after: Optional[HealthMetrics] = Field(None, description="After metrics; null until measured")
+    improved: bool = Field(..., description="True only when after is measured and strictly better")
     message: str = Field(..., description="Status message")
     heal_job_id: Optional[str] = Field(None, description="Bright Data collector ID")
     step: Optional[str] = Field(None, description="Current pipeline step while healing")
     scraper_name: Optional[str] = Field(None, description="Scraper that was healed")
+    before_source: Optional[str] = Field(
+        None,
+        description="Where before came from: diagnose_scrape | cached | placeholder",
+    )
+    after_source: Optional[str] = Field(
+        None,
+        description="Where after came from: rescrape | preview | none | skipped_healthy | unchanged",
+    )

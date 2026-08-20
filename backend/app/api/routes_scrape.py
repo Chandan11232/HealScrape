@@ -59,7 +59,12 @@ async def scrape(req: ScrapeRequest):
                 issue_description=issue_prompt(metrics),
                 urls=req.urls,
                 skip_diagnose=True,
-                before=HealthMetrics(**metrics),
+                before=HealthMetrics(
+                    empty_title_pct=float(metrics["empty_title_pct"]),
+                    empty_body_pct=float(metrics["empty_body_pct"]),
+                    success_rate=float(metrics["success_rate"]),
+                ),
+                rescrape_after=True,
             )
             heal_started = True
             message = (

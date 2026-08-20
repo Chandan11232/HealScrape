@@ -71,7 +71,7 @@ export default function HealDashboard() {
   const [error, setError] = useState(null);
   const [jobHistory, setJobHistory] = useState(loadHistory);
   const [diagnosing, setDiagnosing] = useState(false);
-  const [rescrapeAfter, setRescrapeAfter] = useState(false);
+  const [rescrapeAfter, setRescrapeAfter] = useState(true);
   const [cancelling, setCancelling] = useState(false);
   const pollRef = useRef(null);
 
@@ -258,8 +258,32 @@ export default function HealDashboard() {
     setFormData((prev) => ({ ...prev, [name]: value }));
   }
 
-  function MetricCard({ label, before, after, unit = "%", higherIsBetter = false }) {
-    const improved = higherIsBetter ? after > before : after < before;
+  function MetricCard({ label, before, after, unit = "%", higherIsBetter = false, afterMissing = false }) {
+    if (afterMissing || after == null || Number.isNaN(after)) {
+      return (
+        <div className="metric-card">
+          <div className="metric-label">{label}</div>
+          <div className="metric-values">
+            <div className="metric-value">
+              <span className="metric-title">Before</span>
+              <span className="metric-number">
+                {before.toFixed(1)}
+                {unit}
+              </span>
+            </div>
+            <div className="metric-arrow neutral">→</div>
+            <div className="metric-value">
+              <span className="metric-title">After</span>
+              <span className="metric-number">n/a</span>
+            </div>
+          </div>
+          <div className="metric-change">Not measured yet</div>
+        </div>
+      );
+    }
+    const unchanged = Math.abs(before - after) < 0.05;
+    const improved = !unchanged && (higherIsBetter ? after > before : after < before);
+    const worsened = !unchanged && !improved;
     const change = Math.abs(before - after);
     return (
       <div className="metric-card">
@@ -273,9 +297,11 @@ export default function HealDashboard() {
             </span>
           </div>
           <div className={`metric-arrow ${improved ? "positive" : "neutral"}`}>
-            {higherIsBetter
-              ? (improved ? <TrendingUp size={20} /> : <TrendingDown size={20} />)
-              : (improved ? <TrendingDown size={20} /> : <TrendingUp size={20} />)}
+            {unchanged
+              ? "→"
+              : higherIsBetter
+                ? (improved ? <TrendingUp size={20} /> : <TrendingDown size={20} />)
+                : (improved ? <TrendingDown size={20} /> : <TrendingUp size={20} />)}
           </div>
           <div className="metric-value">
             <span className="metric-title">After</span>
@@ -289,6 +315,13 @@ export default function HealDashboard() {
           <div className="metric-change">
             {higherIsBetter ? "↑" : "↓"} {change.toFixed(1)}
             {unit} improvement
+          </div>
+        )}
+        {unchanged && <div className="metric-change">No change</div>}
+        {worsened && (
+          <div className="metric-change">
+            {higherIsBetter ? "↓" : "↑"} {change.toFixed(1)}
+            {unit} worse
           </div>
         )}
       </div>
@@ -334,9 +367,9 @@ export default function HealDashboard() {
           <div className="eyebrow mono">Auto-Healing</div>
           <h1 className="mono">Scraper Self-Heal Lab</h1>
           <p className="heal-subtitle">
-            Diagnose a collector, heal it in place with Bright Data AI, then
-            re-scrape the same <code>c_*</code> ID. Scraper name can be any key
-            from <code>BRIGHTDATA_SCRAPERS</code> in <code>.env</code>.
+            Diagnose scrape (real before) → Bright Data AI heal on the same{" "}
+            <code>c_*</code> → live re-scrape (real after). Metrics are never
+            invented. Scraper name = any key from <code>BRIGHTDATA_SCRAPERS</code>.
           </p>
         </div>
       </header>
@@ -416,7 +449,7 @@ export default function HealDashboard() {
                   onChange={(e) => setRescrapeAfter(e.target.checked)}
                   disabled={isHealing}
                 />
-                Re-scrape after heal (adds 1–5 min, live after-metrics)
+                Re-scrape after heal (on — live after-metrics from the same test URL)
               </label>
             </div>
 
@@ -517,45 +550,33 @@ export default function HealDashboard() {
                 </div>
               )}
 
-              {result.before && result.after && (
+              {result.before && (
                 <div className="metrics-grid">
                   <MetricCard
                     label="Empty Title %"
                     before={result.before.empty_title_pct}
-                    after={result.after.empty_title_pct}
+                    after={result.after?.empty_title_pct}
+                    afterMissing={!result.after}
                   />
                   <MetricCard
                     label="Empty Body %"
                     before={result.before.empty_body_pct}
-                    after={result.after.empty_body_pct}
+                    after={result.after?.empty_body_pct}
+                    afterMissing={!result.after}
                   />
                   <MetricCard
                     label="Success Rate %"
                     before={result.before.success_rate}
-                    after={result.after.success_rate}
+                    after={result.after?.success_rate}
+                    afterMissing={!result.after}
                     higherIsBetter
                   />
                 </div>
               )}
 
-              {result.before && !result.after && (
-                <div className="metrics-grid">
-                  <MetricCard
-                    label="Empty Title % (baseline)"
-                    before={result.before.empty_title_pct}
-                    after={result.before.empty_title_pct}
-                  />
-                  <MetricCard
-                    label="Empty Body % (baseline)"
-                    before={result.before.empty_body_pct}
-                    after={result.before.empty_body_pct}
-                  />
-                  <MetricCard
-                    label="Success Rate % (baseline)"
-                    before={result.before.success_rate}
-                    after={result.before.success_rate}
-                    higherIsBetter
-                  />
+              {(result.before_source || result.after_source) && (
+                <div className="result-message mono" style={{ opacity: 0.7, fontSize: "0.75rem" }}>
+                  before: {result.before_source || "?"} · after: {result.after_source || "not measured"}
                 </div>
               )}
 
@@ -566,7 +587,13 @@ export default function HealDashboard() {
                   >
                     {result.improved
                       ? "✓ Metrics Improved"
-                      : "→ Collector updated (same ID); metrics unchanged"}
+                      : result.after_source === "skipped_healthy"
+                        ? "→ Already healthy — heal skipped"
+                        : result.after_source === "unchanged"
+                          ? "→ Heal rejected; collector unchanged"
+                          : result.after
+                            ? "→ Heal finished; metrics did not improve"
+                            : "→ Heal finished; after-metrics not measured"}
                   </div>
                 )}
                 <div className="result-message">{result.message}</div>

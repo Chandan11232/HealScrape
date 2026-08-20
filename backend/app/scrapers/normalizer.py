@@ -145,6 +145,14 @@ def from_brightdata(records: list[dict]) -> list[NormalizedDoc]:
             temp = r.get("temperature") or r.get("temp") or r.get("current_temperature")
             if temp:
                 parts.append(f"Temperature: {temp}")
+            if r.get("feels_like"):
+                parts.append(f"Feels like: {r['feels_like']}")
+            if r.get("high_temperature"):
+                parts.append(f"High: {r['high_temperature']}")
+            if r.get("low_temperature"):
+                parts.append(f"Low: {r['low_temperature']}")
+            if r.get("chance_of_rain") is not None:
+                parts.append(f"Chance of rain: {r['chance_of_rain']}")
             if r.get("condition") or r.get("weather"):
                 parts.append(f"Condition: {r.get('condition') or r.get('weather')}")
             if r.get("humidity"):
@@ -156,6 +164,44 @@ def from_brightdata(records: list[dict]) -> list[NormalizedDoc]:
             if r.get("description"):
                 parts.append(str(r["description"]))
             content = "\n".join(str(p) for p in parts if p)
+
+        if not content and isinstance(r.get("repositories"), list) and r["repositories"]:
+            # GitHub trending / repo listing collectors
+            parts = []
+            for repo in r["repositories"][:20]:
+                if isinstance(repo, dict):
+                    name = repo.get("repository_name") or repo.get("name") or ""
+                    url = repo.get("repository_url") or repo.get("url") or ""
+                    desc = repo.get("description") or repo.get("about") or ""
+                    line = " — ".join(x for x in (name, desc, url) if x)
+                    if line:
+                        parts.append(line)
+                elif isinstance(repo, str) and repo.strip():
+                    parts.append(repo.strip())
+            if not title:
+                title = "GitHub repositories"
+            content = "\n".join(parts)
+
+        if not content:
+            # Generic fallback: stitch remaining non-empty scalar fields.
+            skip = {
+                "url", "product_page_url", "input", "error", "warning", "images",
+                "external_links", "github_edit_url", "author_url", "author_image",
+            }
+            parts = []
+            for key, value in r.items():
+                if key in skip:
+                    continue
+                if isinstance(value, str) and value.strip() and value.strip().lower() not in {"none", "null"}:
+                    parts.append(f"{key}: {value.strip()}")
+                elif isinstance(value, (int, float)) and not isinstance(value, bool):
+                    parts.append(f"{key}: {value}")
+                elif isinstance(value, list) and value:
+                    parts.append(f"{key}: {_stringify_list(value)}")
+            if parts and not title:
+                title = next((p.split(":", 1)[1].strip() for p in parts if p), "")[:120]
+            if parts and not content:
+                content = "\n".join(parts)
 
         docs.append(NormalizedDoc(
             source="brightdata",
@@ -171,7 +217,8 @@ def from_brightdata(records: list[dict]) -> list[NormalizedDoc]:
                 "participant_count", "themes", "article_title", "location",
                 "city", "temperature", "temp", "current_temperature",
                 "condition", "forecast", "humidity", "wind", "wind_speed",
-                "weather", "place",
+                "weather", "place", "feels_like", "high_temperature",
+                "low_temperature", "chance_of_rain", "repositories",
             )},
         ))
     return docs

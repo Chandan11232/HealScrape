@@ -7,4 +7,6 @@ pydantic==2.9.2
 # RAG stack — all local/free
 sentence-transformers==3.1.1
 chromadb==0.5.5
+# chromadb 0.5.x breaks with posthog 3+/6+/7+ (noisy capture() telemetry errors)
+posthog>=2.4.0,<3
 ollama==0.3.3

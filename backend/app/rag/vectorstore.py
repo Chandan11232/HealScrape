@@ -2,8 +2,13 @@
 Local, persisted ChromaDB collection. No server, no cloud, no cost —
 data lives on disk at settings.CHROMA_PERSIST_DIR.
 """
+import logging
 import os
-os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")
+
+os.environ["ANONYMIZED_TELEMETRY"] = "False"
+os.environ["CHROMA_TELEMETRY_DISABLED"] = "1"
+logging.getLogger("chromadb.telemetry").setLevel(logging.CRITICAL)
+logging.getLogger("chromadb.telemetry.product.posthog").setLevel(logging.CRITICAL)
 
 import chromadb
 from chromadb.config import Settings as ChromaSettings
