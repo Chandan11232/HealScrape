@@ -76,13 +76,14 @@ def _empty_result(reason: str, answer: str, chunk_count: int) -> dict:
 
 
 def answer_query(query_text: str, top_k: int = 5, source_filter: str | None = None) -> dict:
-    cache_key = (6, query_text.strip(), top_k, source_filter)
+    stats = collection_stats()
+    chunk_count = stats.get("count", 0)
+    # Include chunk_count so ingest invalidates stale "missing_source" answers.
+    cache_key = (7, query_text.strip(), top_k, source_filter, chunk_count)
     cached = _cache_get(cache_key)
     if cached is not None:
         return cached
 
-    stats = collection_stats()
-    chunk_count = stats.get("count", 0)
     domains = domain_list_text()
 
     if is_weather_query(query_text):

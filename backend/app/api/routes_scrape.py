@@ -64,7 +64,7 @@ async def scrape(req: ScrapeRequest):
                     empty_body_pct=float(metrics["empty_body_pct"]),
                     success_rate=float(metrics["success_rate"]),
                 ),
-                rescrape_after=True,
+                rescrape_after=False,
             )
             heal_started = True
             message = (

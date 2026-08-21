@@ -3,14 +3,13 @@ POST /heal — start a background self-healing job.
 GET  /heal/{job_tag} — poll status; also nudges stuck jobs forward.
 
 Loop (same collector ID throughout):
-  diagnose scrape (real before) → Bright Data heal (join/approve/retry) → re-scrape (real after)
+  [diagnose scrape] → Bright Data heal (join/approve) → after from preview (or optional re-scrape)
 
 Rules:
-- before comes from a real diagnose scrape (unless skip_diagnose with cached metrics)
-- after comes from live re-scrape by default (or measured preview); never invent healthy scores
-- improved is true only when both sides are measured and after is strictly better
-- never fail solely because a heal is already in flight (409) — join it
-- pending_answer must be auto-approved (or rejected + retried once)
+- Diagnose & auto-heal measures before; Force heal skips diagnose for speed
+- After prefers Bright Data heal preview (reliable); optional live re-scrape
+- Never invent healthy scores; never soft-abort BD AI in under ~7 minutes
+- pending_answer must be auto-approved when preview looks usable
 """
 from __future__ import annotations
 
@@ -128,11 +127,26 @@ def _finish(
 
 
 def _finish_unchanged(job_tag: str, message: str) -> None:
-    """Heal did not change the collector — still produce after-metrics (rescrape or copy before)."""
+    """Heal did not change the collector — still produce after-metrics when possible."""
     job = heal_jobs[job_tag]
-    urls = job.get("urls") or ([job["test_url"]] if job.get("test_url") else [])
     _set_job(job_tag, bd_success=False)
-    if job.get("rescrape_after", True) and urls:
+
+    # Prefer any measured preview over another long scrape when heal was aborted.
+    preview_after = _after_from_preview(job)
+    if preview_after is not None:
+        _finish(
+            job_tag,
+            after=preview_after,
+            after_source="preview",
+            message=(
+                f"{message.rstrip('.')} After metrics are from the last Bright Data preview."
+            ),
+            status="completed",
+        )
+        return
+
+    urls = job.get("urls") or ([job["test_url"]] if job.get("test_url") else [])
+    if job.get("rescrape_after") and urls:
         _set_job(
             job_tag,
             phase="rescrape",
@@ -143,6 +157,7 @@ def _finish_unchanged(job_tag: str, message: str) -> None:
             ),
         )
         return
+
     before = job["before"]
     _finish(
         job_tag,
@@ -157,42 +172,52 @@ def _finish_unchanged(job_tag: str, message: str) -> None:
 
 
 def _complete_after_bright_data(job_tag: str) -> None:
-    """Decide after-metrics honestly: rescrape > preview > none (never invent healthy scores)."""
+    """After BD heal: prefer measured preview (fast/reliable); optional live re-scrape."""
     job = heal_jobs[job_tag]
     urls = job.get("urls") or ([job["test_url"]] if job.get("test_url") else [])
 
-    # Prefer a live re-scrape whenever we have a URL (default path for accurate after-metrics).
-    if job.get("rescrape_after", True) and urls:
+    # Prefer heal preview when it maps to title/body — avoids long snapshot timeouts.
+    preview_after = _after_from_preview(job)
+    if preview_after is not None and not job.get("rescrape_after"):
+        _finish(
+            job_tag,
+            after=preview_after,
+            after_source="preview",
+            message=(
+                "Bright Data heal finished on the same collector. "
+                "After metrics are from the heal preview."
+            ),
+        )
+        return
+
+    if job.get("rescrape_after", False) and urls:
         _set_job(
             job_tag,
             phase="rescrape",
             step="rescraping",
-            message="Bright Data saved the collector — re-scraping for real after-metrics...",
+            message="Bright Data saved the collector — re-scraping for live after-metrics...",
         )
         return
 
-    records = job.get("preview_records") or []
-    if records:
-        raw = calculate_health_metrics(records)
-        if raw.get("_measured"):
-            _finish(
-                job_tag,
-                after=_metrics(raw),
-                after_source="preview",
-                message=(
-                    "Bright Data heal finished. After metrics are from heal preview "
-                    "(enable re-scrape after heal for a full live measurement)."
-                ),
-            )
-            return
+    if preview_after is not None:
         _finish(
             job_tag,
-            after=None,
-            after_source="none",
+            after=preview_after,
+            after_source="preview",
             message=(
-                "Bright Data heal finished, but preview rows did not map to title/body. "
-                "Re-run with re-scrape after heal for real after-metrics."
+                "Bright Data heal finished. After metrics are from heal preview "
+                "(live re-scrape was not requested)."
             ),
+        )
+        return
+
+    if urls:
+        # No usable preview — fall back to a live scrape once.
+        _set_job(
+            job_tag,
+            phase="rescrape",
+            step="rescraping",
+            message="No usable heal preview — re-scraping for after-metrics...",
         )
         return
 
@@ -202,7 +227,7 @@ def _complete_after_bright_data(job_tag: str) -> None:
         after_source="none",
         message=(
             "Bright Data heal finished on the same collector ID, but after-metrics were not measured "
-            "(no usable preview + re-scrape disabled). Run again with rescrape_after=true to verify."
+            "(no usable preview and no test URL for re-scrape)."
         ),
     )
 
@@ -735,7 +760,7 @@ def start_heal_job(
     skip_diagnose: bool = False,
     before: HealthMetrics | None = None,
     force_heal: bool = True,
-    rescrape_after: bool = True,
+    rescrape_after: bool = False,
 ) -> HealResponse:
     existing = heal_jobs.get(job_tag)
     if existing and existing.get("status") == "healing":
@@ -760,10 +785,16 @@ def start_heal_job(
         before_source = "cached"
         initial_phase = "trigger"
     elif force_heal and not skip_diagnose:
-        # Still diagnose for real before-metrics; force_heal only means "heal even if healthy".
-        before_metrics = _metrics(PLACEHOLDER_HEALTH)
-        before_source = "placeholder"
-        initial_phase = "diagnose"
+        # Fast path for Force heal: skip diagnose scrape, go straight to Bright Data.
+        # Before may be placeholder unless a prior scrape for this job_tag exists.
+        stored = get_current_health(job_tag)
+        if not is_placeholder(stored):
+            before_metrics = _metrics(stored)
+            before_source = "cached"
+        else:
+            before_metrics = _metrics(PLACEHOLDER_HEALTH)
+            before_source = "placeholder"
+        initial_phase = "trigger"
     elif skip_diagnose:
         stored = get_current_health(job_tag)
         if is_placeholder(stored):

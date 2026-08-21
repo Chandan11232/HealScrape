@@ -20,10 +20,10 @@ class HealRequest(BaseModel):
         description="If false, skip Bright Data heal when diagnose scrape already looks healthy",
     )
     rescrape_after: bool = Field(
-        True,
+        False,
         description=(
-            "Re-scrape after heal for live after-metrics (recommended). "
-            "If false, after-metrics come from Bright Data preview only when it maps to title/body."
+            "If true, run a live re-scrape after heal (slower, can time out). "
+            "Default false uses Bright Data heal preview when available — reliable after-metrics."
         ),
     )
 

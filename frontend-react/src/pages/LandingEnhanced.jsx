@@ -17,7 +17,7 @@ const STATS = [
   { value: '13', label: 'Studio collectors' },
   { value: '100%', label: 'Runs locally' },
   { value: '$0', label: 'Per query' },
-  { value: '<3s', label: 'Avg response' },
+  { value: '<8s', label: 'Avg response' },
 ]
 
 const STEPS = [

@@ -127,7 +127,18 @@ def preview_looks_usable(data: dict) -> bool:
     filled = 0
     has_titleish = False
     has_bodyish = False
-    title_keys = {"title", "page_title", "headline", "article_title", "job_title", "hackathon_title", "location"}
+    title_keys = {
+        "title",
+        "page_title",
+        "headline",
+        "article_title",
+        "job_title",
+        "hackathon_title",
+        "location",
+        "repository_name",
+        "name",
+        "city",
+    }
     body_keys = {
         "content",
         "text",
@@ -136,7 +147,11 @@ def preview_looks_usable(data: dict) -> bool:
         "description",
         "summary",
         "current_temperature",
+        "temperature",
         "repositories",
+        "readme_content",
+        "forecast",
+        "tagline",
     }
 
     for sample in records:

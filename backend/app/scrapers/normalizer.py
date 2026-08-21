@@ -182,6 +182,13 @@ def from_brightdata(records: list[dict]) -> list[NormalizedDoc]:
                 title = "GitHub repositories"
             content = "\n".join(parts)
 
+        if not title and r.get("repository_name"):
+            title = str(r.get("repository_name") or "").strip()
+        if not content and r.get("readme_content"):
+            content = str(r.get("readme_content") or "").strip()
+        if not content and r.get("description") and r.get("repository_name"):
+            content = str(r.get("description") or "").strip()
+
         if not content:
             # Generic fallback: stitch remaining non-empty scalar fields.
             skip = {

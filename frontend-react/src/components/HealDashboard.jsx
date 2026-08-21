@@ -71,7 +71,7 @@ export default function HealDashboard() {
   const [error, setError] = useState(null);
   const [jobHistory, setJobHistory] = useState(loadHistory);
   const [diagnosing, setDiagnosing] = useState(false);
-  const [rescrapeAfter, setRescrapeAfter] = useState(true);
+  const [rescrapeAfter, setRescrapeAfter] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const pollRef = useRef(null);
 
@@ -258,7 +258,15 @@ export default function HealDashboard() {
     setFormData((prev) => ({ ...prev, [name]: value }));
   }
 
-  function MetricCard({ label, before, after, unit = "%", higherIsBetter = false, afterMissing = false }) {
+  function MetricCard({
+    label,
+    before,
+    after,
+    unit = "%",
+    higherIsBetter = false,
+    afterMissing = false,
+    trustDelta = true,
+  }) {
     if (afterMissing || after == null || Number.isNaN(after)) {
       return (
         <div className="metric-card">
@@ -282,8 +290,10 @@ export default function HealDashboard() {
       );
     }
     const unchanged = Math.abs(before - after) < 0.05;
-    const improved = !unchanged && (higherIsBetter ? after > before : after < before);
-    const worsened = !unchanged && !improved;
+    const improved =
+      trustDelta && !unchanged && (higherIsBetter ? after > before : after < before);
+    const worsened =
+      trustDelta && !unchanged && !improved;
     const change = Math.abs(before - after);
     return (
       <div className="metric-card">
@@ -297,7 +307,7 @@ export default function HealDashboard() {
             </span>
           </div>
           <div className={`metric-arrow ${improved ? "positive" : "neutral"}`}>
-            {unchanged
+            {!trustDelta || unchanged
               ? "→"
               : higherIsBetter
                 ? (improved ? <TrendingUp size={20} /> : <TrendingDown size={20} />)
@@ -311,14 +321,17 @@ export default function HealDashboard() {
             </span>
           </div>
         </div>
-        {improved && (
+        {!trustDelta && (
+          <div className="metric-change">Before unmeasured — delta not scored</div>
+        )}
+        {trustDelta && improved && (
           <div className="metric-change">
             {higherIsBetter ? "↑" : "↓"} {change.toFixed(1)}
             {unit} improvement
           </div>
         )}
-        {unchanged && <div className="metric-change">No change</div>}
-        {worsened && (
+        {trustDelta && unchanged && <div className="metric-change">No change</div>}
+        {trustDelta && worsened && (
           <div className="metric-change">
             {higherIsBetter ? "↓" : "↑"} {change.toFixed(1)}
             {unit} worse
@@ -367,9 +380,9 @@ export default function HealDashboard() {
           <div className="eyebrow mono">Auto-Healing</div>
           <h1 className="mono">Scraper Self-Heal Lab</h1>
           <p className="heal-subtitle">
-            Diagnose scrape (real before) → Bright Data AI heal on the same{" "}
-            <code>c_*</code> → live re-scrape (real after). Metrics are never
-            invented. Scraper name = any key from <code>BRIGHTDATA_SCRAPERS</code>.
+            Diagnose scrape → Bright Data AI heal on the same <code>c_*</code> →
+            after-metrics from heal preview (or optional live re-scrape). Scraper
+            name = any key from <code>BRIGHTDATA_SCRAPERS</code>.
           </p>
         </div>
       </header>
@@ -449,7 +462,7 @@ export default function HealDashboard() {
                   onChange={(e) => setRescrapeAfter(e.target.checked)}
                   disabled={isHealing}
                 />
-                Re-scrape after heal (on — live after-metrics from the same test URL)
+                Re-scrape after heal (optional — slower; preview is used by default)
               </label>
             </div>
 
@@ -557,12 +570,22 @@ export default function HealDashboard() {
                     before={result.before.empty_title_pct}
                     after={result.after?.empty_title_pct}
                     afterMissing={!result.after}
+                    trustDelta={
+                      result.before_source !== "placeholder" &&
+                      result.after_source !== "unchanged" &&
+                      result.after_source !== "none"
+                    }
                   />
                   <MetricCard
                     label="Empty Body %"
                     before={result.before.empty_body_pct}
                     after={result.after?.empty_body_pct}
                     afterMissing={!result.after}
+                    trustDelta={
+                      result.before_source !== "placeholder" &&
+                      result.after_source !== "unchanged" &&
+                      result.after_source !== "none"
+                    }
                   />
                   <MetricCard
                     label="Success Rate %"
@@ -570,6 +593,11 @@ export default function HealDashboard() {
                     after={result.after?.success_rate}
                     afterMissing={!result.after}
                     higherIsBetter
+                    trustDelta={
+                      result.before_source !== "placeholder" &&
+                      result.after_source !== "unchanged" &&
+                      result.after_source !== "none"
+                    }
                   />
                 </div>
               )}
@@ -583,17 +611,27 @@ export default function HealDashboard() {
               <div className="result-footer">
                 {result.status === "completed" && (
                   <div
-                    className={`improvement-badge ${result.improved ? "improved" : "unchanged"}`}
+                    className={`improvement-badge ${
+                      result.improved ||
+                      (result.after_source === "preview" && result.before_source === "placeholder")
+                        ? "improved"
+                        : "unchanged"
+                    }`}
                   >
                     {result.improved
                       ? "✓ Metrics Improved"
                       : result.after_source === "skipped_healthy"
                         ? "→ Already healthy — heal skipped"
                         : result.after_source === "unchanged"
-                          ? "→ Heal rejected; collector unchanged"
-                          : result.after
-                            ? "→ Heal finished; metrics did not improve"
-                            : "→ Heal finished; after-metrics not measured"}
+                          ? "→ Heal aborted; collector unchanged"
+                          : result.after_source === "preview" &&
+                              result.before_source === "placeholder"
+                            ? "✓ Heal saved on Bright Data (preview after; before unmeasured)"
+                            : result.after_source === "preview"
+                              ? "✓ Heal finished — after from Bright Data preview"
+                              : result.after
+                                ? "→ Heal finished; metrics did not improve"
+                                : "→ Heal finished; after-metrics not measured"}
                   </div>
                 )}
                 <div className="result-message">{result.message}</div>
