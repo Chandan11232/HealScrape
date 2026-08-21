@@ -92,7 +92,7 @@ def answer_query(query_text: str, top_k: int = 5, source_filter: str | None = No
             return {
                 "answer": (
                     "Ask for a city or place, for example: "
-                    "What is the weather in Rupnagar tomorrow?"
+                    "What is the weather in Delhi tomorrow?"
                 ),
                 "sources": [],
                 "in_scope": True,

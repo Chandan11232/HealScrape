@@ -12,8 +12,6 @@ const IN_SCOPE = [
   'What did the scraped TechCrunch or The Verge articles say about AI?',
   'What is artificial intelligence, according to the Wikipedia page that was ingested?',
   'What are the best efficient models according to huggingface?',
-  "What will tomorrow's weather be in Rupnagar?",
-  'What is the current weather in Delhi?',
 ]
 
 const OUT_OF_SCOPE = [
