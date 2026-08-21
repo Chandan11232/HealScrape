@@ -86,7 +86,7 @@ def from_brightdata(records: list[dict]) -> list[NormalizedDoc]:
             or r.get("article_title") or r.get("location") or r.get("city") or ""
         )
 
-        content = r.get("text") or r.get("content") or ""
+        content = r.get("text") or r.get("content") or r.get("article_body") or r.get("excerpt") or ""
 
         if not content and "content_paragraphs" in r:
             # Section-based docs scrapers (e.g. Python docs)
@@ -129,7 +129,7 @@ def from_brightdata(records: list[dict]) -> list[NormalizedDoc]:
             content = "\n\n".join(p for p in parts if p)
 
         if not content and "article_content" in r and "headline" in r:
-            # News article scrapers (e.g. VentureBeat)
+            # News article scrapers (e.g. VentureBeat, some Verge shapes)
             parts = []
             if r.get("headline"):
                 parts.append(f"Headline: {r['headline']}")
