@@ -18,7 +18,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.config import settings
 from app.models.heal_schemas import HealRequest, HealResponse, HealthMetrics, BatchHealRequest
-from app.scrapers.catalog import example_url_for
+from app.scrapers.catalog import example_url_for, SITEMAP_SCRAPER_NAMES
 from app.scrapers.health import (
     get_current_health,
     issue_prompt,
@@ -241,6 +241,8 @@ def _scrape_with_retries(
     """Run Bright Data scrape; retry on timeout/transient errors."""
     attempts = max(1, int(getattr(settings, "HEAL_SCRAPE_RETRIES", 2)))
     timeout = settings.HEAL_SCRAPE_TIMEOUT
+    if scraper_name in SITEMAP_SCRAPER_NAMES:
+        timeout = max(timeout, 300)
     last_err: Exception | None = None
     for i in range(attempts):
         try:

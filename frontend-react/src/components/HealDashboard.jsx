@@ -19,7 +19,7 @@ const URL_HINTS = {
   tiangolo: "https://fastapi.tiangolo.com/tutorial/dependencies/",
   react: "https://react.dev/",
   techcrunch: "https://techcrunch.com/",
-  theverge: "https://www.theverge.com/",
+  theverge: "https://www.theverge.com/ai-artificial-intelligence/980160/apple-intelligence-china-custom-ai-model-alibaba",
   venturebeat: "https://venturebeat.com/",
   openai: "https://openai.com/",
   devpost: "https://devpost.com/hackathons",

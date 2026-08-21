@@ -4,7 +4,10 @@ so the RAG pipeline never has to care which source a document came from.
 """
 from dataclasses import dataclass, asdict
 import json
+import re
 from pathlib import Path
+from urllib.parse import urlparse
+
 from app.config import settings
 
 
@@ -19,7 +22,6 @@ class NormalizedDoc:
 
 def _strip_html(html: str) -> str:
     """Strip HTML tags and unescape entities — no bs4 dependency needed."""
-    import re
     from html import unescape
     if not html:
         return ""
@@ -27,6 +29,30 @@ def _strip_html(html: str) -> str:
     text = unescape(text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
+
+
+def _infer_title(record: dict, content: str) -> str:
+    """Fill missing titles for news/docs rows (common on The Verge section scrapes)."""
+    for key in ("title", "headline", "article_title", "page_title"):
+        value = record.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    page_url = record.get("product_page_url") or record.get("url") or ""
+    if isinstance(page_url, str) and page_url.strip():
+        slug = urlparse(page_url.strip()).path.rstrip("/").split("/")[-1]
+        slug = re.sub(r"[-_]+", " ", slug).strip()
+        if slug and not slug.isdigit():
+            return slug[:120].title()
+
+    text = (content or "").strip()
+    if text:
+        first = re.split(r"(?<=[.!?])\s+", text, maxsplit=1)[0].strip()
+        if len(first) > 140:
+            first = first[:137].rstrip() + "..."
+        if first:
+            return first
+    return ""
 
 
 def _stringify_list(items) -> str:
@@ -209,6 +235,9 @@ def from_brightdata(records: list[dict]) -> list[NormalizedDoc]:
                 title = next((p.split(":", 1)[1].strip() for p in parts if p), "")[:120]
             if parts and not content:
                 content = "\n".join(parts)
+
+        if not title:
+            title = _infer_title(r, content)
 
         docs.append(NormalizedDoc(
             source="brightdata",

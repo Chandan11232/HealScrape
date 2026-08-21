@@ -4,6 +4,8 @@ Closed collector catalog.
 Any key in BRIGHTDATA_SCRAPERS can be used on /scrape and /heal.
 This list is the default RAG/console set; extra env keys still work.
 """
+import re
+from urllib.parse import urlparse
 
 INDEXED_SOURCES = [
     {
@@ -53,7 +55,7 @@ INDEXED_SOURCES = [
         "scraper_name": "theverge",
         "kind": "news",
         "covers": "The Verge articles that were scraped",
-        "example_url": "https://www.theverge.com/",
+        "example_url": "https://www.theverge.com/ai-artificial-intelligence/980160/apple-intelligence-china-custom-ai-model-alibaba",
     },
     {
         "domain": "venturebeat.com",
@@ -119,18 +121,18 @@ PROMPT_ONLY_HEAL_SCRAPERS = frozenset(
 SCRAPER_BY_NAME = {s["scraper_name"]: s for s in INDEXED_SOURCES}
 
 # Bright Data Collection API inputs for collectors that reject plain {"url": ...}.
-# Verified against each c_* trigger schema (sitemap_url + url_pattern).
+# Sitemap URLs verified via each site's robots.txt (not guessed /sitemap.xml paths).
 SITEMAP_SCRAPE_INPUTS: dict[str, dict[str, str]] = {
     "theverge": {
-        "sitemap_url": "https://www.theverge.com/sitemap.xml",
+        "sitemap_url": "https://www.theverge.com/sitemaps/google_news",
         "url_pattern": ".*",
     },
     "techcrunch": {
-        "sitemap_url": "https://techcrunch.com/sitemap.xml",
+        "sitemap_url": "https://techcrunch.com/news-sitemap.xml",
         "url_pattern": ".*",
     },
     "venturebeat": {
-        "sitemap_url": "https://venturebeat.com/sitemap.xml",
+        "sitemap_url": "https://venturebeat.com/news-sitemap.xml",
         "url_pattern": ".*",
     },
     "python": {
@@ -142,6 +144,8 @@ SITEMAP_SCRAPE_INPUTS: dict[str, dict[str, str]] = {
         "url_pattern": ".*",
     },
 }
+
+SITEMAP_SCRAPER_NAMES = frozenset(SITEMAP_SCRAPE_INPUTS.keys())
 
 
 def example_url_for(scraper_name: str) -> str:
@@ -156,7 +160,16 @@ def scrape_inputs_for(scraper_name: str, urls: list[str]) -> list[dict]:
     """
     fixed = SITEMAP_SCRAPE_INPUTS.get(scraper_name)
     if fixed:
-        return [dict(fixed)]
+        payload = dict(fixed)
+        test_url = next((u.strip() for u in urls if u and u.strip()), "") or example_url_for(scraper_name)
+        if test_url:
+            path = urlparse(test_url).path
+            article_id = re.search(r"/(\d+)/", path)
+            if article_id:
+                payload["url_pattern"] = f".*{article_id.group(1)}.*"
+            elif path and path != "/":
+                payload["url_pattern"] = re.escape(path.rstrip("/")) + ".*"
+        return [payload]
 
     test_urls = [u.strip() for u in urls if u and u.strip()]
     if not test_urls:
