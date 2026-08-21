@@ -1,7 +1,7 @@
 """
 Manual smoke test for the RAG layer. Run from backend/: python test_rag.py
 
-Requires: `ollama serve` running locally with OLLAMA_MODEL pulled.
+Requires: GROQ_API_KEY in .env (free key from https://console.groq.com/keys).
 Uses whatever normalized_*.json files exist in data/processed/ from
 your scraper smoke test — no new scraping, no cost.
 """

@@ -66,7 +66,7 @@ cd backend
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-# needs: ollama serve && ollama pull llama3.2
+# needs: GROQ_API_KEY in .env (https://console.groq.com/keys)
 uvicorn app.main:app --reload
 
 # Frontend (second terminal)

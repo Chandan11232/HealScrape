@@ -1,44 +1,69 @@
 """
-Local LLM calls via Ollama. No API key, no per-token cost —
-just needs `ollama serve` running with the model pulled.
+LLM calls via Groq's OpenAI-compatible Chat Completions API.
+Free-tier default: openai/gpt-oss-120b (stable production model).
 """
+from __future__ import annotations
+
 import httpx
-import ollama
+
 from app.config import settings
 
+GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions"
 
-class OllamaUnavailable(RuntimeError):
+
+class LLMUnavailable(RuntimeError):
     pass
 
 
+# Back-compat alias for older imports
+OllamaUnavailable = LLMUnavailable
+
+
 def generate(prompt: str, system: str | None = None) -> str:
-    messages = []
+    api_key = (settings.GROQ_API_KEY or "").strip()
+    if not api_key:
+        raise LLMUnavailable(
+            "GROQ_API_KEY is not set. Create a free key at https://console.groq.com/keys "
+            "and add GROQ_API_KEY to backend/.env."
+        )
+
+    messages: list[dict[str, str]] = []
     if system:
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": prompt})
 
-    try:
-        response = ollama.chat(
-            model=settings.OLLAMA_MODEL,
-            messages=messages,
-            options={
-                "temperature": 0,
-                "num_predict": settings.OLLAMA_NUM_PREDICT,
-                "num_ctx": settings.OLLAMA_NUM_CTX,
-            },
-        )
-    except (httpx.ConnectError, ConnectionError) as e:
-        raise OllamaUnavailable(
-            "Ollama is not running. Start it with `ollama serve`, then "
-            f"`ollama pull {settings.OLLAMA_MODEL}`. Tried {settings.OLLAMA_BASE_URL}."
-        ) from e
-    except Exception as e:
-        msg = str(e).lower()
-        if "not found" in msg or "pull" in msg:
-            raise OllamaUnavailable(
-                f"Ollama is up but model '{settings.OLLAMA_MODEL}' is missing. "
-                f"Run: ollama pull {settings.OLLAMA_MODEL}"
-            ) from e
-        raise
+    payload = {
+        "model": settings.GROQ_MODEL,
+        "messages": messages,
+        "temperature": 0,
+        "max_tokens": settings.GROQ_MAX_TOKENS,
+    }
 
-    return response["message"]["content"]
+    try:
+        with httpx.Client(timeout=60.0) as client:
+            resp = client.post(
+                GROQ_CHAT_URL,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+    except httpx.HTTPError as e:
+        raise LLMUnavailable(f"Could not reach Groq API: {e}") from e
+
+    if resp.status_code == 401:
+        raise LLMUnavailable("Groq rejected the API key (401). Check GROQ_API_KEY.")
+    if resp.status_code == 429:
+        raise LLMUnavailable(
+            "Groq rate limit hit (429). Free tier is limited — wait a minute and retry."
+        )
+    if resp.status_code >= 400:
+        detail = (resp.text or "")[:300]
+        raise LLMUnavailable(f"Groq error HTTP {resp.status_code}: {detail}")
+
+    data = resp.json()
+    try:
+        return data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as e:
+        raise LLMUnavailable(f"Unexpected Groq response shape: {data!r}") from e

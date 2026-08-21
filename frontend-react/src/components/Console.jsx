@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import Navbar from './Navbar'
 import { Search, ExternalLink, Sparkles } from 'lucide-react'
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
+import { API_BASE, apiFetch } from '../api'
 
 const IN_SCOPE = [
   'How does dependency injection work in FastAPI?',
@@ -42,7 +42,7 @@ export default function Console() {
   const abortRef = useRef(null)
 
   useEffect(() => {
-    fetch(`${API_BASE}/knowledge`)
+    apiFetch('/knowledge')
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data && typeof data.chunk_count === 'number') setChunkCount(data.chunk_count)
@@ -78,7 +78,7 @@ export default function Console() {
     try {
       const body = { query: trimmed, top_k: 5 }
       if (sourceFilter) body.source_filter = sourceFilter
-      const res = await fetch(`${API_BASE}/query`, {
+      const res = await apiFetch('/query', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),

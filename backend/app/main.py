@@ -33,15 +33,10 @@ def _warm_embeddings() -> None:
     get_model()
 
 
-def _ping_ollama() -> None:
+def _ping_groq() -> None:
     try:
-        import ollama
-        from app.config import settings
-        ollama.chat(
-            model=settings.OLLAMA_MODEL,
-            messages=[{"role": "user", "content": "ok"}],
-            options={"num_predict": 1, "temperature": 0},
-        )
+        from app.llm.client import generate
+        generate("ok")
     except Exception:
         pass
 
@@ -49,7 +44,7 @@ def _ping_ollama() -> None:
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     await asyncio.to_thread(_warm_embeddings)
-    asyncio.create_task(asyncio.to_thread(_ping_ollama))
+    asyncio.create_task(asyncio.to_thread(_ping_groq))
     yield
 
 

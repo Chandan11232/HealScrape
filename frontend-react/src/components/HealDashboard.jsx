@@ -6,8 +6,8 @@ import {
   TrendingUp,
   TrendingDown,
 } from "lucide-react";
+import { API_BASE, apiFetch } from "../api";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 const ACTIVE_JOB_KEY = "heal_active_job_tag";
 const HISTORY_KEY = "heal_job_history";
 const POLL_MS = 3000;
@@ -86,7 +86,7 @@ export default function HealDashboard() {
   }, []);
 
   const fetchJobStatus = useCallback(async (jobTag) => {
-    const res = await fetch(`${API_BASE}/heal/${jobTag}`);
+    const res = await apiFetch(`/heal/${jobTag}`);
     if (!res.ok) {
       if (res.status === 404) {
         localStorage.removeItem(ACTIVE_JOB_KEY);
@@ -163,7 +163,7 @@ export default function HealDashboard() {
   }, [fetchJobStatus, startPolling, upsertHistory]);
 
   useEffect(() => {
-    fetch(`${API_BASE}/knowledge`)
+    apiFetch("/knowledge")
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data?.scraper_names?.length) setScraperNames(data.scraper_names);
@@ -184,7 +184,7 @@ export default function HealDashboard() {
     const jobTag =
       formData.job_tag.trim() || `${formData.scraper_name}_heal_${Date.now()}`;
     try {
-      const res = await fetch(`${API_BASE}/heal`, {
+      const res = await apiFetch("/heal", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -225,7 +225,7 @@ export default function HealDashboard() {
     };
 
     try {
-      const res = await fetch(`${API_BASE}/heal`, {
+      const res = await apiFetch("/heal", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -348,7 +348,7 @@ export default function HealDashboard() {
     stopPolling();
     localStorage.removeItem(ACTIVE_JOB_KEY);
     try {
-      const res = await fetch(`${API_BASE}/heal/${jobTag}/cancel`, { method: "POST" });
+      const res = await apiFetch(`/heal/${jobTag}/cancel`, { method: "POST" });
       const data = res.ok ? await res.json() : null;
       setResult(
         data || {
