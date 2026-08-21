@@ -32,3 +32,4 @@ chroma_db/
 data/
 processed/
 raw/
+.vercel

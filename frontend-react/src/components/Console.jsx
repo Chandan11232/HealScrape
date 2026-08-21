@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import Navbar from './Navbar'
 import { Search, ExternalLink, Sparkles } from 'lucide-react'
 
-const API_BASE = 'http://localhost:8000'
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
 
 const IN_SCOPE = [
   'How does dependency injection work in FastAPI?',
