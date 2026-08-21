@@ -71,7 +71,9 @@ export default function HealDashboard() {
   const [error, setError] = useState(null);
   const [jobHistory, setJobHistory] = useState(loadHistory);
   const [diagnosing, setDiagnosing] = useState(false);
-  const [rescrapeAfter, setRescrapeAfter] = useState(false);
+  const [rescrapeAfter, setRescrapeAfter] = useState(true);
+  const [urlHints, setUrlHints] = useState(URL_HINTS);
+  const [batchRunning, setBatchRunning] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const pollRef = useRef(null);
 
@@ -167,6 +169,13 @@ export default function HealDashboard() {
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data?.scraper_names?.length) setScraperNames(data.scraper_names);
+        if (data?.sources?.length) {
+          const hints = { ...URL_HINTS };
+          for (const s of data.sources) {
+            if (s.scraper_name && s.example_url) hints[s.scraper_name] = s.example_url;
+          }
+          setUrlHints(hints);
+        }
       })
       .catch(() => {});
   }, []);
@@ -251,11 +260,43 @@ export default function HealDashboard() {
       setFormData((prev) => ({
         ...prev,
         scraper_name: value,
-        test_url: prev.test_url.trim() ? prev.test_url : (URL_HINTS[value] || prev.test_url),
+        test_url: prev.test_url.trim() ? prev.test_url : (urlHints[value] || prev.test_url),
       }));
       return;
     }
     setFormData((prev) => ({ ...prev, [name]: value }));
+  }
+
+  async function handleBatchHeal() {
+    if (!window.confirm("Queue authentic heal for all 13 collectors? Runs one at a time (~minutes each).")) {
+      return;
+    }
+    setError(null);
+    setBatchRunning(true);
+    try {
+      const res = await apiFetch("/heal/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force_heal: true, rescrape_after: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || `Server returned ${res.status}`);
+      setError(null);
+      setResult({
+        status: "completed",
+        job_tag: "batch",
+        before: { empty_title_pct: 0, empty_body_pct: 0, success_rate: 0 },
+        after: null,
+        improved: false,
+        message: data.message || `Batch queued: ${data.count} collectors.`,
+        before_source: "placeholder",
+        after_source: "none",
+      });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBatchRunning(false);
+    }
   }
 
   function MetricCard({
@@ -380,9 +421,9 @@ export default function HealDashboard() {
           <div className="eyebrow mono">Auto-Healing</div>
           <h1 className="mono">Scraper Self-Heal Lab</h1>
           <p className="heal-subtitle">
-            Diagnose scrape → Bright Data AI heal on the same <code>c_*</code> →
-            after-metrics from heal preview (or optional live re-scrape). Scraper
-            name = any key from <code>BRIGHTDATA_SCRAPERS</code>.
+            Live diagnose scrape → Bright Data AI heal on the same <code>c_*</code> →
+            live re-scrape for authentic before/after metrics. Scraper name = any key from{" "}
+            <code>BRIGHTDATA_SCRAPERS</code>.
           </p>
         </div>
       </header>
@@ -462,7 +503,7 @@ export default function HealDashboard() {
                   onChange={(e) => setRescrapeAfter(e.target.checked)}
                   disabled={isHealing}
                 />
-                Re-scrape after heal (optional — slower; preview is used by default)
+                Re-scrape after heal (recommended — authentic live after-metrics)
               </label>
             </div>
 
@@ -484,8 +525,17 @@ export default function HealDashboard() {
                   Healing on server...
                 </>
               ) : (
-                "Force heal (skip health check)"
+                "Force heal (diagnose + always run BD AI)"
               )}
+            </button>
+
+            <button
+              type="button"
+              disabled={isHealing || batchRunning}
+              className="heal-btn secondary"
+              onClick={handleBatchHeal}
+            >
+              {batchRunning ? "Queuing batch…" : "Heal all 13 collectors (batch)"}
             </button>
 
             {(isHealing || cancelling) && result?.job_tag && (
@@ -613,7 +663,9 @@ export default function HealDashboard() {
                   <div
                     className={`improvement-badge ${
                       result.improved ||
-                      (result.after_source === "preview" && result.before_source === "placeholder")
+                      (result.after_source === "preview" &&
+                        result.before_source === "placeholder" &&
+                        !/failed|left unchanged|unchanged/i.test(result.message || ""))
                         ? "improved"
                         : "unchanged"
                     }`}
@@ -625,8 +677,9 @@ export default function HealDashboard() {
                         : result.after_source === "unchanged"
                           ? "→ Heal aborted; collector unchanged"
                           : result.after_source === "preview" &&
-                              result.before_source === "placeholder"
-                            ? "✓ Heal saved on Bright Data (preview after; before unmeasured)"
+                          result.before_source === "placeholder" &&
+                          !/failed|left unchanged|unchanged/i.test(result.message || "")
+                        ? "✓ Heal saved on Bright Data (preview after; before unmeasured)"
                             : result.after_source === "preview"
                               ? "✓ Heal finished — after from Bright Data preview"
                               : result.after

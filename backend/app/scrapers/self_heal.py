@@ -16,6 +16,7 @@ import httpx
 from typing import Any, Dict
 
 from app.config import settings
+from app.scrapers.catalog import heal_trigger_payloads
 
 BRIGHTDATA_API_KEY = settings.BRIGHTDATA_API_KEY
 BRIGHTDATA_BASE_URL = "https://api.brightdata.com"
@@ -241,12 +242,8 @@ async def trigger_heal(
         prompt = f"{prompt}\n\nTest against: {test_url}".strip()
     prompt = prompt[:1000]
 
-    custom_input: list[dict] = []
-    if test_url:
-        custom_input = [{"url": test_url}]
-
     url = f"{BRIGHTDATA_BASE_URL}/dca/collectors/{collector_id}/refactor_template"
-    payload = {"prompt": prompt, "custom_input": custom_input}
+    payloads = heal_trigger_payloads(scraper_name, prompt, test_url)
 
     async with _trigger_lock:
         # Prefer joining an in-flight / pending job over creating a conflicting one.
@@ -279,40 +276,66 @@ async def trigger_heal(
         except Exception:
             pass
 
+        last_error: str | None = None
         try:
-            resp = await _client().post(url, json=payload, headers=_headers())
-            if resp.status_code == 409:
-                progress = {}
+            for idx, payload in enumerate(payloads):
                 try:
-                    progress = await fetch_heal_progress(collector_id)
-                except Exception:
-                    pass
+                    resp = await _client().post(url, json=payload, headers=_headers())
+                    if resp.status_code == 409:
+                        progress = {}
+                        try:
+                            progress = await fetch_heal_progress(collector_id)
+                        except Exception:
+                            pass
+                        return {
+                            "heal_job_id": collector_id,
+                            "status": "already_running",
+                            "progress": progress,
+                            "message": (
+                                f"Heal already running on collector {collector_id} (409). "
+                                "Joining the in-flight Bright Data job."
+                            ),
+                        }
+                    if resp.status_code == 400 and "invalid custom input" in resp.text.lower():
+                        last_error = resp.text[:300]
+                        continue
+                    resp.raise_for_status()
+                    return {
+                        "heal_job_id": collector_id,
+                        "status": "pending_answer",
+                        "message": (
+                            f"Self-heal triggered for collector {collector_id}"
+                            + (
+                                " (collector uses prompt-only input; test URL is in the prompt)."
+                                if idx > 0 and test_url
+                                else ""
+                            )
+                        ),
+                    }
+                except httpx.HTTPStatusError as e:
+                    body = ""
+                    try:
+                        body = e.response.text[:300]
+                    except Exception:
+                        pass
+                    if (
+                        e.response.status_code == 400
+                        and "invalid custom input" in body.lower()
+                        and idx < len(payloads) - 1
+                    ):
+                        last_error = body
+                        continue
+                    return {
+                        "heal_job_id": None,
+                        "status": "error",
+                        "message": f"Failed to trigger heal: {e} {body}",
+                    }
+            if last_error:
                 return {
-                    "heal_job_id": collector_id,
-                    "status": "already_running",
-                    "progress": progress,
-                    "message": (
-                        f"Heal already running on collector {collector_id} (409). "
-                        "Joining the in-flight Bright Data job."
-                    ),
+                    "heal_job_id": None,
+                    "status": "error",
+                    "message": f"Failed to trigger heal: Invalid custom input ({last_error})",
                 }
-            resp.raise_for_status()
-            return {
-                "heal_job_id": collector_id,
-                "status": "pending_answer",
-                "message": f"Self-heal triggered for collector {collector_id}",
-            }
-        except httpx.HTTPStatusError as e:
-            body = ""
-            try:
-                body = e.response.text[:300]
-            except Exception:
-                pass
-            return {
-                "heal_job_id": None,
-                "status": "error",
-                "message": f"Failed to trigger heal: {e} {body}",
-            }
         except Exception as e:
             return {
                 "heal_job_id": None,

@@ -3,13 +3,12 @@ POST /heal — start a background self-healing job.
 GET  /heal/{job_tag} — poll status; also nudges stuck jobs forward.
 
 Loop (same collector ID throughout):
-  [diagnose scrape] → Bright Data heal (join/approve) → after from preview (or optional re-scrape)
+  diagnose scrape (always, unless skip_diagnose) → Bright Data heal → live re-scrape after (default)
 
 Rules:
-- Diagnose & auto-heal measures before; Force heal skips diagnose for speed
-- After prefers Bright Data heal preview (reliable); optional live re-scrape
-- Never invent healthy scores; never soft-abort BD AI in under ~7 minutes
-- pending_answer must be auto-approved when preview looks usable
+- Force heal = still diagnose for real before-metrics; only skips the "already healthy" early exit
+- After defaults to live re-scrape (authentic); preview only when rescrape_after=false
+- Never replay a stale Bright Data "done" job as a new heal — always trigger fresh when idle
 """
 from __future__ import annotations
 
@@ -18,7 +17,8 @@ import time
 from fastapi import APIRouter, HTTPException
 
 from app.config import settings
-from app.models.heal_schemas import HealRequest, HealResponse, HealthMetrics
+from app.models.heal_schemas import HealRequest, HealResponse, HealthMetrics, BatchHealRequest
+from app.scrapers.catalog import example_url_for
 from app.scrapers.health import (
     get_current_health,
     issue_prompt,
@@ -54,7 +54,7 @@ _heal_loops: set[str] = set()
 MAX_HEAL_SECONDS = settings.HEAL_MAX_SECONDS
 STUCK_STEP_SECONDS = settings.HEAL_STUCK_STEP_SECONDS
 MAX_ACTIVE_WATCH_SECONDS = settings.HEAL_ACTIVE_WATCH_SECONDS
-MAX_HEAL_ATTEMPTS = 0  # never chain another long Bright Data AI job after a bad preview
+MAX_HEAL_ATTEMPTS = 2  # one retry after reject / bad preview / trigger error
 
 
 def _metrics(data: dict) -> HealthMetrics:
@@ -126,13 +126,13 @@ def _finish(
     )
 
 
-def _finish_unchanged(job_tag: str, message: str) -> None:
+def _finish_unchanged(job_tag: str, message: str, *, use_preview: bool = True) -> None:
     """Heal did not change the collector — still produce after-metrics when possible."""
     job = heal_jobs[job_tag]
     _set_job(job_tag, bd_success=False)
 
-    # Prefer any measured preview over another long scrape when heal was aborted.
-    preview_after = _after_from_preview(job)
+    # Stale previews from a failed/aborted heal must not look like a successful fix.
+    preview_after = _after_from_preview(job) if use_preview else None
     if preview_after is not None:
         _finish(
             job_tag,
@@ -463,6 +463,7 @@ async def _handle_pending_answer(job_tag: str, data: dict) -> None:
             job_tag,
             "Bright Data returned an unusable heal proposal and retries are exhausted. "
             "Collector left unchanged.",
+            use_preview=False,
         )
         return
 
@@ -485,6 +486,7 @@ async def _handle_pending_answer(job_tag: str, data: dict) -> None:
                 job_tag,
                 f"Could not auto-approve Bright Data proposal ({approve_result['message']}). "
                 "Collector left unchanged — re-run heal to try again.",
+                use_preview=False,
             )
             return
         _set_job(job_tag, approved=True, phase="poll", message="Fix approved — saving collector...")
@@ -535,30 +537,14 @@ async def _advance_heal_step(job_tag: str) -> None:
                 )
                 return
 
-            if existing_status in DONE_STATUSES:
-                # Prefer a usable preview. success=True with a 404/empty preview is NOT a win.
-                if preview_looks_usable(existing):
-                    _set_job(job_tag, bd_success=True)
-                    if preview:
-                        _set_job(job_tag, preview_records=preview)
-                    _set_job(
-                        job_tag,
-                        message="Collector already has a completed Bright Data heal — using that result.",
-                    )
-                    _complete_after_bright_data(job_tag)
-                    return
-                if existing.get("success") is True and not preview:
-                    _set_job(job_tag, bd_success=True)
-                    _set_job(
-                        job_tag,
-                        message="Collector already healed on Bright Data (no preview payload) — treating as saved.",
-                    )
-                    _complete_after_bright_data(job_tag)
-                    return
-                # done but junk preview — fall through and start a fresh heal
+            # Do not short-circuit on DONE — each Heal Lab job must run a fresh BD heal
+            # when the collector is idle, so before/after metrics belong to this run.
             if existing_status in FAIL_STATUSES:
-                # Clear failed job by rejecting if stuck, then re-trigger below.
-                pass
+                try:
+                    await reject_heal(collector_id)
+                    await asyncio.sleep(1.5)
+                except Exception:
+                    pass
         except Exception as e:
             _set_job(job_tag, message=f"Progress check before trigger failed ({e}); trying trigger again...")
 
@@ -576,6 +562,7 @@ async def _advance_heal_step(job_tag: str) -> None:
                 job_tag,
                 f"Bright Data trigger failed after retries ({heal_result.get('message')}). "
                 "Collector left unchanged.",
+                use_preview=False,
             )
             return
 
@@ -651,6 +638,7 @@ async def _advance_heal_step(job_tag: str) -> None:
             job_tag,
             f"Bright Data heal ended with status={status} after {job.get('heal_attempts', 0)} attempt(s). "
             "Collector left unchanged.",
+            use_preview=False,
         )
         return
 
@@ -665,6 +653,7 @@ async def _advance_heal_step(job_tag: str) -> None:
             job_tag,
             "Bright Data finished but the healed preview was empty/unusable after retries. "
             "Collector left unchanged.",
+            use_preview=False,
         )
         return
 
@@ -726,6 +715,7 @@ async def _heal_loop(job_tag: str) -> None:
                             _finish_unchanged(
                                 job_tag,
                                 "Bright Data finished with an unusable preview. Collector left unchanged.",
+                                use_preview=False,
                             )
                         break
                 except Exception:
@@ -779,21 +769,9 @@ def start_heal_job(
 
     url_list = urls or ([test_url] if test_url else [])
 
-    # force_heal still diagnoses for real before-metrics; it only means "heal even if healthy".
     if skip_diagnose and before is not None:
         before_metrics = before
         before_source = "cached"
-        initial_phase = "trigger"
-    elif force_heal and not skip_diagnose:
-        # Fast path for Force heal: skip diagnose scrape, go straight to Bright Data.
-        # Before may be placeholder unless a prior scrape for this job_tag exists.
-        stored = get_current_health(job_tag)
-        if not is_placeholder(stored):
-            before_metrics = _metrics(stored)
-            before_source = "cached"
-        else:
-            before_metrics = _metrics(PLACEHOLDER_HEALTH)
-            before_source = "placeholder"
         initial_phase = "trigger"
     elif skip_diagnose:
         stored = get_current_health(job_tag)
@@ -845,9 +823,9 @@ def start_heal_job(
         "phase": initial_phase,
         "step": "diagnosing" if initial_phase == "diagnose" else "queued",
         "message": (
-            "Queued — will scrape for real before-metrics, then heal if needed."
+            "Queued — scraping for real before-metrics, then Bright Data heal + live re-scrape."
             if initial_phase == "diagnose"
-            else "Starting Bright Data heal on the same collector (diagnose scrape skipped for speed)..."
+            else "Starting Bright Data heal (before-metrics cached from a prior scrape)..."
         ),
         "heal_job_id": collector_id,
         "collector_id": collector_id,
@@ -873,16 +851,92 @@ def start_heal_job(
 
 @router.post("/heal", response_model=HealResponse)
 async def heal_endpoint(req: HealRequest):
+    test_url = (req.test_url or "").strip() or example_url_for(req.scraper_name)
+    if not test_url:
+        raise HTTPException(
+            status_code=400,
+            detail=f"test_url is required (no example URL configured for '{req.scraper_name}').",
+        )
     return start_heal_job(
         scraper_name=req.scraper_name,
-        test_url=req.test_url,
+        test_url=test_url,
         job_tag=req.job_tag,
         issue_description=req.issue_description,
-        urls=[req.test_url] if req.test_url else None,
+        urls=[test_url],
         skip_diagnose=req.skip_diagnose,
         force_heal=req.force_heal,
         rescrape_after=req.rescrape_after,
     )
+
+
+_batch_lock = asyncio.Lock()
+_batch_running = False
+
+
+@router.post("/heal/batch")
+async def heal_batch(req: BatchHealRequest):
+    """
+    Queue one authentic heal job per collector, processed sequentially in the background.
+    Bright Data free tier allows ~3 parallel AI jobs — batch runs one at a time.
+    """
+    global _batch_running
+    names = req.scraper_names or list(settings.BRIGHTDATA_SCRAPERS.keys())
+    unknown = [n for n in names if n not in settings.BRIGHTDATA_SCRAPERS]
+    if unknown:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown scraper_name(s): {unknown}. Available: {list(settings.BRIGHTDATA_SCRAPERS.keys())}",
+        )
+    if _batch_running:
+        raise HTTPException(status_code=409, detail="A batch heal is already running. Wait for it to finish.")
+
+    planned: list[dict] = []
+    ts = int(time.time() * 1000)
+    for i, name in enumerate(names):
+        test_url = example_url_for(name)
+        if not test_url:
+            planned.append({"scraper_name": name, "skipped": True, "reason": "no example_url in catalog"})
+            continue
+        planned.append(
+            {
+                "scraper_name": name,
+                "job_tag": f"batch_{name}_{ts}_{i}",
+                "test_url": test_url,
+            }
+        )
+
+    async def _run_batch() -> None:
+        global _batch_running
+        async with _batch_lock:
+            _batch_running = True
+            try:
+                for item in planned:
+                    job_tag = item.get("job_tag")
+                    if not job_tag:
+                        continue
+                    start_heal_job(
+                        scraper_name=item["scraper_name"],
+                        test_url=item["test_url"],
+                        job_tag=job_tag,
+                        force_heal=req.force_heal,
+                        rescrape_after=req.rescrape_after,
+                    )
+                    while heal_jobs.get(job_tag, {}).get("status") == "healing":
+                        await asyncio.sleep(settings.HEAL_POLL_SECONDS)
+                    await asyncio.sleep(5)
+            finally:
+                _batch_running = False
+
+    asyncio.create_task(_run_batch())
+    return {
+        "status": "queued",
+        "count": len([q for q in planned if q.get("job_tag")]),
+        "jobs": planned,
+        "message": (
+            "Batch heal started sequentially in the background (one collector at a time). "
+            "Poll each job_tag via GET /heal/{job_tag}. Expect several minutes per collector."
+        ),
+    }
 
 
 @router.get("/heal/{job_tag}", response_model=HealResponse)

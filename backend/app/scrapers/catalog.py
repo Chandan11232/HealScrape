@@ -101,6 +101,96 @@ INDEXED_SOURCES = [
 
 INDEXED_DOMAINS = [s["domain"] for s in INDEXED_SOURCES]
 
+# Collectors whose Bright Data heal API rejects {"url": ...} in custom_input.
+# Heal still passes the test URL inside the prompt text.
+PROMPT_ONLY_HEAL_SCRAPERS = frozenset(
+    {
+        "theverge",
+        "python",
+        "techcrunch",
+        "venturebeat",
+        "huggingface",
+        "weather",
+        "openai",
+        "remoteok",
+    }
+)
+
+SCRAPER_BY_NAME = {s["scraper_name"]: s for s in INDEXED_SOURCES}
+
+# Bright Data Collection API inputs for collectors that reject plain {"url": ...}.
+# Verified against each c_* trigger schema (sitemap_url + url_pattern).
+SITEMAP_SCRAPE_INPUTS: dict[str, dict[str, str]] = {
+    "theverge": {
+        "sitemap_url": "https://www.theverge.com/sitemap.xml",
+        "url_pattern": ".*",
+    },
+    "techcrunch": {
+        "sitemap_url": "https://techcrunch.com/sitemap.xml",
+        "url_pattern": ".*",
+    },
+    "venturebeat": {
+        "sitemap_url": "https://venturebeat.com/sitemap.xml",
+        "url_pattern": ".*",
+    },
+    "python": {
+        "sitemap_url": "https://docs.python.org/sitemap.xml",
+        "url_pattern": ".*",
+    },
+    "huggingface": {
+        "sitemap_url": "https://huggingface.co/sitemap.xml",
+        "url_pattern": ".*",
+    },
+}
+
+
+def example_url_for(scraper_name: str) -> str:
+    entry = SCRAPER_BY_NAME.get(scraper_name)
+    return (entry or {}).get("example_url", "")
+
+
+def scrape_inputs_for(scraper_name: str, urls: list[str]) -> list[dict]:
+    """
+    Build trigger payloads for a collector's input schema.
+    Most collectors: [{"url": "..."}]. Sitemap collectors: sitemap_url + url_pattern.
+    """
+    fixed = SITEMAP_SCRAPE_INPUTS.get(scraper_name)
+    if fixed:
+        return [dict(fixed)]
+
+    test_urls = [u.strip() for u in urls if u and u.strip()]
+    if not test_urls:
+        fallback = example_url_for(scraper_name)
+        if fallback:
+            test_urls = [fallback]
+    if not test_urls:
+        raise ValueError(
+            f"No URLs provided for scraper '{scraper_name}' and no example_url in catalog."
+        )
+    return [{"url": u} for u in test_urls]
+
+
+def heal_trigger_payloads(scraper_name: str, prompt: str, test_url: str) -> list[dict]:
+    """Ordered refactor_template bodies — first match wins per collector input schema."""
+    prompt = (prompt or "").strip()[:1000]
+    url_row = [{"url": test_url}] if test_url else []
+    empty_row: list[dict] = []
+
+    if scraper_name in PROMPT_ONLY_HEAL_SCRAPERS:
+        ordered = [empty_row, url_row] if test_url else [empty_row]
+    else:
+        ordered = [url_row, empty_row] if test_url else [empty_row]
+
+    seen: set[str] = set()
+    payloads: list[dict] = []
+    for custom_input in ordered:
+        key = str(custom_input)
+        if key in seen:
+            continue
+        seen.add(key)
+        payloads.append({"prompt": prompt, "custom_input": custom_input})
+    return payloads or [{"prompt": prompt, "custom_input": []}]
+
 # Longer aliases first so "the verge" matches before a bare token.
 _QUERY_ALIASES = (
     ("fastapi.tiangolo.com", "fastapi.tiangolo.com"),

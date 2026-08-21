@@ -6,6 +6,7 @@ from pathlib import Path
 
 from app.config import settings
 from app.scrapers.brightdata_client import brightdata_client
+from app.scrapers.catalog import scrape_inputs_for
 from app.scrapers.health import calculate_health_metrics
 from app.scrapers.normalizer import from_brightdata, save_normalized
 
@@ -22,7 +23,7 @@ def run_brightdata_scrape(
         if cache.exists():
             cache.unlink()
 
-    inputs = [{"url": u} for u in urls]
+    inputs = scrape_inputs_for(scraper_name, urls)
     results = brightdata_client.scrape(
         inputs, job_tag=job_tag, scraper_name=scraper_name, timeout=timeout
     )
@@ -31,4 +32,7 @@ def run_brightdata_scrape(
     metrics = calculate_health_metrics(
         [{"title": d.title, "content": d.content} for d in docs]
     )
+    if not results:
+        # Scrape ran but collector returned no rows — still a real measurement.
+        metrics["_measured"] = True
     return docs, metrics, str(path)

@@ -20,10 +20,10 @@ class HealRequest(BaseModel):
         description="If false, skip Bright Data heal when diagnose scrape already looks healthy",
     )
     rescrape_after: bool = Field(
-        False,
+        True,
         description=(
-            "If true, run a live re-scrape after heal (slower, can time out). "
-            "Default false uses Bright Data heal preview when available — reliable after-metrics."
+            "If true (default), run a live re-scrape after heal for authentic after-metrics. "
+            "If false, uses Bright Data heal preview when available (faster, less accurate)."
         ),
     )
 
@@ -53,4 +53,20 @@ class HealResponse(BaseModel):
     after_source: Optional[str] = Field(
         None,
         description="Where after came from: rescrape | preview | none | skipped_healthy | unchanged",
+    )
+
+
+class BatchHealRequest(BaseModel):
+    """POST /heal/batch — queue authentic heal jobs for many collectors (sequential)."""
+    scraper_names: list[str] | None = Field(
+        None,
+        description="Subset to heal; default = all keys in BRIGHTDATA_SCRAPERS",
+    )
+    force_heal: bool = Field(
+        True,
+        description="Run Bright Data heal even when diagnose scrape looks healthy",
+    )
+    rescrape_after: bool = Field(
+        True,
+        description="Live re-scrape after heal for authentic after-metrics",
     )
