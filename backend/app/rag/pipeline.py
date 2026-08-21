@@ -17,30 +17,42 @@ from app.wikipedia.intent import extract_topic, is_wikipedia_query
 from app.wikipedia.client import answer_wikipedia
 
 SYSTEM_PROMPT = (
-    "You are a research assistant for a closed knowledge base of scraped pages. "
-    "Answer using only the provided context. "
-    "Name the models, techniques, or products the sources discuss and what they claim. "
-    "If the pages do not give a numbered ranking, say that, then still summarize "
-    "the strongest models or efficiency methods that appear. "
-    "Do not invent facts that are not in the context. "
-    "Cite sources using the [n] markers from the context."
+    "You are a research assistant for a closed corpus of scraped pages. "
+    "Answer ONLY using the provided context. Never invent facts.\n\n"
+    "Use this exact structure (plain text, no markdown tables):\n"
+    "Summary: <one direct sentence>\n"
+    "Key points:\n"
+    "- <model, technique, or finding> — <short reason from context>\n"
+    "(3–5 bullets maximum)\n\n"
+    "Rules: no preamble ('the pages you provided…'), no emoji, no pipe tables, "
+    "no long paragraphs. If context lacks an official ranked list, say that once in Summary, "
+    "then still list what the sources mention."
 )
+
+# Strip LLM filler and markdown noise from answers shown in Console.
+_ANSWER_NOISE = re.compile(
+    r"^(The pages you provided|The supplied (material|context)|However, they do|In short,)\b.*?\n+",
+    re.I | re.S,
+)
+_TABLE_LINE = re.compile(r"^\s*\|.*\|\s*$", re.M)
+_MULTI_BLANK = re.compile(r"\n{3,}")
+
+
+def format_answer(text: str) -> str:
+    text = (text or "").strip()
+    text = _ANSWER_NOISE.sub("", text)
+    text = _TABLE_LINE.sub("", text)
+    text = re.sub(r"\s*Source:\s*\[\d+\]\s*", " ", text)
+    text = re.sub(r"\s*\[\d+\]\s*", " ", text)
+    text = re.sub(r"\s*\(Source\s+\d+\)\s*", " ", text)
+    text = _MULTI_BLANK.sub("\n\n", text)
+    text = re.sub(r"[ \t]+", " ", text)
+    return text.strip()
+
 
 _CACHE_MAX = 32
 _cache_lock = threading.Lock()
 _query_cache: OrderedDict[tuple, dict] = OrderedDict()
-
-
-def clean_citations(text: str) -> str:
-    """
-    Remove citation markers from text.
-    Strips patterns like 'Source: [1]', '[1]', '(Source 1)', etc.
-    """
-    text = re.sub(r'\s*Source:\s*\[\d+\]\s*', ' ', text)
-    text = re.sub(r'\s*\[\d+\]\s*', ' ', text)
-    text = re.sub(r'\s*\(Source\s+\d+\)\s*', ' ', text)
-    text = re.sub(r'\s+', ' ', text).strip()
-    return text
 
 
 def clear_query_cache() -> None:
@@ -79,7 +91,7 @@ def answer_query(query_text: str, top_k: int = 5, source_filter: str | None = No
     stats = collection_stats()
     chunk_count = stats.get("count", 0)
     # Include chunk_count so ingest invalidates stale "missing_source" answers.
-    cache_key = (7, query_text.strip(), top_k, source_filter, chunk_count)
+    cache_key = (8, query_text.strip(), top_k, source_filter, chunk_count)
     cached = _cache_get(cache_key)
     if cached is not None:
         return cached
@@ -188,13 +200,28 @@ def answer_query(query_text: str, top_k: int = 5, source_filter: str | None = No
             )
         return result
 
-    prompt = f"Context:\n{context}\n\nQuestion: {query_text}\n\nAnswer:"
-    answer = generate(prompt, system=SYSTEM_PROMPT)
-    answer = clean_citations(answer)
+    prompt = (
+        f"Context:\n{context}\n\n"
+        f"Question: {query_text}\n\n"
+        "Reply with Summary + Key points only."
+    )
+    answer = format_answer(generate(prompt, system=SYSTEM_PROMPT))
+
+    def _source_title(meta: dict) -> str:
+        title = (meta.get("doc_title") or "").strip()
+        url = (meta.get("doc_url") or "").strip()
+        if len(title) > 100 or not title:
+            slug = url.rstrip("/").split("/")[-1] if url else ""
+            if slug and slug not in {"index", "blog"}:
+                title = slug.replace("-", " ").replace("_", " ").strip().title()
+        if len(title) > 100:
+            title = title[:97].rstrip() + "..."
+        return title or url or "Untitled"
+
     sources = [{
         "rank": i + 1,
         "url": h["metadata"].get("doc_url"),
-        "title": h["metadata"].get("doc_title"),
+        "title": _source_title(h["metadata"]),
         "source": h["metadata"].get("source"),
     } for i, h in enumerate(hits)]
     result = {

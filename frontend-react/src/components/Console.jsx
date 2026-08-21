@@ -460,7 +460,15 @@ export default function Console() {
           min-width: 24px;
           padding-top: 2px;
         }
-        .source-title { color: var(--text); font-weight: 500; margin-bottom: 4px; }
+        .source-title {
+          color: var(--text);
+          font-weight: 500;
+          margin-bottom: 4px;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+        }
         .source-link {
           display: inline-flex;
           align-items: center;

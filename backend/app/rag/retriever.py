@@ -24,6 +24,12 @@ _STOP = re.compile(
 )
 _HTML = re.compile(r"<[^>]+>")
 _SPACE = re.compile(r"\s+")
+# Blog/nav boilerplate that pollutes retrieved chunks.
+_JUNK_LINE = re.compile(
+    r"^(Share on|Subscribe|Sign up|Related posts|Read more|Skip to content|"
+    r"Cookie|Privacy Policy|All rights reserved)\b",
+    re.I,
+)
 
 
 def _strip_site_mentions(query_text: str) -> str:
@@ -108,9 +114,23 @@ def retrieve_in_scope(
     return [h for h in hits if h.get("distance", 999) <= MAX_DISTANCE][:top_k]
 
 
-def _visible_text(text: str) -> str:
+def _visible_text(text: str, max_chars: int = 700) -> str:
     cleaned = _HTML.sub(" ", text or "")
-    return _SPACE.sub(" ", cleaned).strip()
+    cleaned = _SPACE.sub(" ", cleaned).strip()
+    if not cleaned:
+        return ""
+    # Drop obvious nav/footer lines when chunks include page chrome.
+    parts = []
+    for sentence in re.split(r"(?<=[.!?])\s+", cleaned):
+        if _JUNK_LINE.search(sentence):
+            continue
+        parts.append(sentence)
+        if sum(len(p) for p in parts) >= max_chars:
+            break
+    cleaned = " ".join(parts) if parts else cleaned
+    if len(cleaned) > max_chars:
+        cleaned = cleaned[: max_chars - 3].rstrip() + "..."
+    return cleaned
 
 
 def format_context(hits: list[dict], max_chars: int = 4000) -> tuple[str, list[dict]]:
@@ -122,8 +142,8 @@ def format_context(hits: list[dict], max_chars: int = 4000) -> tuple[str, list[d
         if not body:
             continue
         entry = (
-            f"[{i}] Source: {meta.get('source')} | "
-            f"{meta.get('doc_title') or meta.get('doc_url')}\n{body}"
+            f"[{i}] {meta.get('doc_title') or meta.get('doc_url') or meta.get('source')}\n"
+            f"{body}"
         )
         if total + len(entry) > max_chars:
             break
