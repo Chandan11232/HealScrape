@@ -25,11 +25,11 @@ SOURCES = [
     # (name, job_tag, url, method)
     # method: "cached" = use existing normalized_*.json
     #         "direct" = fetch with httpx, extract text
-    ("openai",       "demo_openai",  "https://openai.com/index/chatgpt/",                "cached"),
-    ("react",        "demo_react",   "https://react.dev/reference/rsc/server-components", "cached"),
-    ("docker_intro", "demo_docker",  "https://docs.docker.com/get-started/docker-concepts/the-basics/what-is-a-container/", "direct"),
-    ("mdn_web",      "demo_mdn",     "https://developer.mozilla.org/en-US/docs/Web/JavaScript", "direct"),
-    ("stripe_docs",  "demo_stripe",  "https://docs.stripe.com/api/charges",              "direct"),
+    ("openai",       "openai_batch1",  "https://openai.com/index/chatgpt/",                "cached"),
+    ("react",        "react_batch1",   "https://react.dev/reference/rsc/server-components", "cached"),
+    ("docker_intro", "demo_docker",    "https://docs.docker.com/get-started/docker-concepts/the-basics/what-is-a-container/", "direct"),
+    ("mdn_web",      "demo_mdn",       "https://developer.mozilla.org/en-US/docs/Web/JavaScript", "direct"),
+    ("stripe_docs",  "demo_stripe",    "https://docs.stripe.com/api/charges",              "direct"),
 ]
 
 
