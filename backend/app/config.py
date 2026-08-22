@@ -36,6 +36,9 @@ class Settings:
     GROQ_MAX_TOKENS: int = int(os.getenv("GROQ_MAX_TOKENS", "768"))
     EMBED_BATCH_SIZE: int = int(os.getenv("EMBED_BATCH_SIZE", "8"))
     CHROMA_UPSERT_BATCH: int = int(os.getenv("CHROMA_UPSERT_BATCH", "32"))
+    # Keep Railway 1GB ingest from embedding huge collector dumps.
+    SCRAPE_MAX_RECORDS: int = int(os.getenv("SCRAPE_MAX_RECORDS", "3"))
+    INGEST_MAX_DOCS: int = int(os.getenv("INGEST_MAX_DOCS", "3"))
 
     # --- Storage ---
     RAW_DATA_DIR: str = "data/raw"

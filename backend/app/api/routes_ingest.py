@@ -23,6 +23,10 @@ async def ingest(req: IngestRequest):
         raise HTTPException(status_code=404, detail=f"No normalized data found for job_tag '{req.job_tag}'. Run /scrape first.")
 
     docs = json.loads(path.read_text())
+    if not isinstance(docs, list):
+        raise HTTPException(status_code=500, detail="Normalized file is not a JSON array.")
+    if settings.INGEST_MAX_DOCS > 0:
+        docs = docs[: settings.INGEST_MAX_DOCS]
     try:
         result = await asyncio.to_thread(ingest_documents, docs)
     except Exception as e:

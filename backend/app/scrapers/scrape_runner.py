@@ -28,6 +28,8 @@ def run_brightdata_scrape(
         inputs, job_tag=job_tag, scraper_name=scraper_name, timeout=timeout
     )
     docs = from_brightdata(results)
+    if settings.SCRAPE_MAX_RECORDS > 0:
+        docs = docs[: settings.SCRAPE_MAX_RECORDS]
     path = save_normalized(docs, job_tag)
     metrics = calculate_health_metrics(
         [{"title": d.title, "content": d.content} for d in docs]
