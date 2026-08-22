@@ -6,7 +6,7 @@ Run from backend/:
     RAILWAY_URL=https://your-app.up.railway.app python local_scrape_5.py
 
 Credit budget: 35 max. Each fresh scrape = ~1 credit.
-  openai/react = CACHED (0 credits).  mdn/stripe/docker = FRESH (~3 credits).
+  openai/react = CACHED (0 credits).  docker/mdn/stripe = FRESH (~3 credits).
 """
 import json
 import os
@@ -25,11 +25,13 @@ from app.scrapers.scrape_runner import run_brightdata_scrape
 CREDIT_CAP = 35
 RAILWAY_URL = os.getenv("RAILWAY_URL", "").rstrip("/")
 JOBS = [
-    ("mdn_web",      "demo_mdn",    "https://developer.mozilla.org/en-US/docs/Web/JavaScript"),
-    ("stripe_docs",  "demo_stripe", "https://docs.stripe.com/api/charges"),
-    ("docker_intro", "demo_docker",  "https://docs.docker.com/get-started/docker-concepts/the-basics/what-is-a-container/"),
+    # Cached first — instant, 0 credits
     ("openai",       "demo_openai", "https://openai.com/index/chatgpt/"),
     ("react",        "demo_react",  "https://react.dev/reference/rsc/server-components"),
+    # Fresh scrapes — ~1 credit each, longer timeout
+    ("docker_intro", "demo_docker",  "https://docs.docker.com/get-started/docker-concepts/the-basics/what-is-a-container/"),
+    ("mdn_web",      "demo_mdn",    "https://developer.mozilla.org/en-US/docs/Web/JavaScript"),
+    ("stripe_docs",  "demo_stripe", "https://docs.stripe.com/api/charges"),
 ]
 
 
@@ -78,7 +80,7 @@ def main():
         print(f"[S]  {name}: scraping... (credits so far: {credits})")
         try:
             docs, metrics, _ = run_brightdata_scrape(
-                [url], tag, name, force=True, timeout=540, max_records=0,
+                [url], tag, name, force=True, timeout=900, max_records=0,
             )
             payload = [asdict(d) for d in docs]
             rail = post_to_railway(tag, payload)
