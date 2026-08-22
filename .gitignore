@@ -4,7 +4,6 @@
 .env*.local
 
 # Secrets
-backend/app/config.py
 backend/.env
 
 # Node/Python
