@@ -19,10 +19,17 @@ router = APIRouter(prefix="/ingest", tags=["ingest"])
 @router.post("", response_model=IngestResponse)
 async def ingest(req: IngestRequest):
     path = Path(settings.PROCESSED_DATA_DIR) / f"normalized_{req.job_tag}.json"
-    if not path.exists():
+    if req.documents is not None:
+        docs = req.documents
+        if not isinstance(docs, list):
+            raise HTTPException(status_code=400, detail="documents must be a JSON array.")
+        Path(settings.PROCESSED_DATA_DIR).mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(docs, separators=(",", ":")))
+    elif path.exists():
+        docs = json.loads(path.read_text())
+    else:
         raise HTTPException(status_code=404, detail=f"No normalized data found for job_tag '{req.job_tag}'. Run /scrape first.")
 
-    docs = json.loads(path.read_text())
     if not isinstance(docs, list):
         raise HTTPException(status_code=500, detail="Normalized file is not a JSON array.")
     if settings.INGEST_MAX_DOCS > 0:

@@ -29,6 +29,8 @@ class ScrapeResponse(BaseModel):
 
 class IngestRequest(BaseModel):
     job_tag: str  # matches normalized_{job_tag}.json in data/processed/
+    # Optional: push Bright Data-normalized docs without a prior /scrape on this host.
+    documents: list[dict] | None = None
 
 
 class IngestResponse(BaseModel):
