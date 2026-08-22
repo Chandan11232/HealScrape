@@ -63,8 +63,8 @@ def fetch_direct(url: str, name: str) -> list[dict]:
     content_html = main.group(1) if main else html
     content = _strip_html(content_html)
     # Truncate to reasonable size for embedding
-    if len(content) > 50000:
-        content = content[:50000]
+    if len(content) > 10000:
+        content = content[:10000]
     return [{
         "source": "direct",
         "url": url,
@@ -95,7 +95,7 @@ def post_to_railway(job_tag: str, docs: list[dict]) -> dict | None:
     if not RAILWAY_URL:
         return None
     import httpx
-    BATCH = 10
+    BATCH = 1
     total_chunks = 0
     total_docs = 0
     try:
