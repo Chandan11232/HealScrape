@@ -17,6 +17,7 @@ def run_brightdata_scrape(
     scraper_name: str,
     force: bool = False,
     timeout: int | None = None,
+    max_records: int | None = None,
 ) -> tuple[list, dict, str]:
     if force:
         cache = Path(settings.RAW_DATA_DIR) / f"brightdata_{job_tag}.json"
@@ -28,8 +29,9 @@ def run_brightdata_scrape(
         inputs, job_tag=job_tag, scraper_name=scraper_name, timeout=timeout
     )
     docs = from_brightdata(results)
-    if settings.SCRAPE_MAX_RECORDS > 0:
-        docs = docs[: settings.SCRAPE_MAX_RECORDS]
+    limit = max_records if max_records is not None else settings.SCRAPE_MAX_RECORDS
+    if limit > 0:
+        docs = docs[:limit]
     path = save_normalized(docs, job_tag)
     metrics = calculate_health_metrics(
         [{"title": d.title, "content": d.content} for d in docs]
