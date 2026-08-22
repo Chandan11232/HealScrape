@@ -10,10 +10,9 @@ class HealthSnapshot(BaseModel):
 class ScrapeRequest(BaseModel):
     job_tag: str
     urls: list[str]
-    source: str  # "brightdata" | "firecrawl" | "tavily"
-    scraper_name: str | None = None  # required when source == "brightdata" — key in BRIGHTDATA_SCRAPERS
-    tavily_query: str | None = None  # only used when source == "tavily"
-    auto_heal: bool = True  # Bright Data only: heal + re-scrape if extraction is unhealthy
+    source: str = "brightdata"  # Bright Data Scraper Studio only
+    scraper_name: str | None = None  # key in BRIGHTDATA_SCRAPERS
+    auto_heal: bool = True  # heal + re-scrape if extraction is unhealthy
 
 
 class ScrapeResponse(BaseModel):

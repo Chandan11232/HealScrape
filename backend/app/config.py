@@ -2,8 +2,6 @@
 Central config. All keys come from .env — never hardcode.
 Free-tier notes:
 - BRIGHTDATA_API_KEY: from Scraper Studio dashboard (trial credit, no card needed to start)
-- FIRECRAWL_API_KEY: free tier = 500 credits/month
-- TAVILY_API_KEY: free tier = 1000 searches/month
 - GROQ_API_KEY: free Chat Completions for Console RAG answers
 """
 import os
@@ -22,10 +20,6 @@ class Settings:
     # Set in .env as a JSON object string, e.g.:
     # BRIGHTDATA_SCRAPERS={"techcrunch": "c_abc123", "wikipedia": "c_def456"}
     BRIGHTDATA_SCRAPERS: dict = json.loads(os.getenv("BRIGHTDATA_SCRAPERS", "{}"))
-
-    # --- Supplementary scrapers (optional, keep usage light) ---
-    FIRECRAWL_API_KEY: str = os.getenv("FIRECRAWL_API_KEY", "")
-    TAVILY_API_KEY: str = os.getenv("TAVILY_API_KEY", "")
 
     # --- RAG stack ---
     EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
@@ -47,7 +41,6 @@ class Settings:
 
     # --- Safety limits so free tiers never get exceeded ---
     MAX_PAGES_PER_SCRAPE: int = 20
-    MAX_TAVILY_CALLS_PER_RUN: int = 5
 
     # Auto-heal when a collector's extraction quality drops below these.
     HEAL_MIN_SUCCESS_RATE: float = float(os.getenv("HEAL_MIN_SUCCESS_RATE", "60"))

@@ -75,7 +75,7 @@ def _normalize_filters(source_filter: str | list[str] | None) -> list[str]:
     if not source_filter:
         return []
     if isinstance(source_filter, str):
-        if source_filter in ("brightdata", "firecrawl", "tavily"):
+        if source_filter == "brightdata":
             return [source_filter]
         return [source_filter.removeprefix("www.")]
     return [d.removeprefix("www.") for d in source_filter]
@@ -85,7 +85,7 @@ def _where_filter(source_filter: str | list[str] | None) -> dict | None:
     filters = _normalize_filters(source_filter)
     if not filters:
         return None
-    if filters[0] in ("brightdata", "firecrawl", "tavily") and len(filters) == 1:
+    if filters[0] == "brightdata" and len(filters) == 1:
         return {"source": filters[0]}
     if len(filters) == 1:
         return {"domain": filters[0]}
@@ -113,7 +113,7 @@ def query(
     query_embedding = embed_texts([query_text])[0]
     domains = [
         d for d in _normalize_filters(source_filter)
-        if d not in ("brightdata", "firecrawl", "tavily")
+        if d != "brightdata"
     ]
     where = _where_filter(source_filter)
     if where:

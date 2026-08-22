@@ -1,6 +1,5 @@
 """
-Normalizes Bright Data / Firecrawl / Tavily outputs into one schema
-so the RAG pipeline never has to care which source a document came from.
+Normalizes Bright Data collector output into one schema for the RAG pipeline.
 """
 from dataclasses import dataclass, asdict
 import json
@@ -13,7 +12,7 @@ from app.config import settings
 
 @dataclass
 class NormalizedDoc:
-    source: str          # "brightdata" | "firecrawl" | "tavily"
+    source: str          # "brightdata"
     url: str
     title: str
     content: str
@@ -256,33 +255,6 @@ def from_brightdata(records: list[dict]) -> list[NormalizedDoc]:
                 "weather", "place", "feels_like", "high_temperature",
                 "low_temperature", "chance_of_rain", "repositories",
             )},
-        ))
-    return docs
-
-
-def from_firecrawl(records: list[dict]) -> list[NormalizedDoc]:
-    docs = []
-    for r in records:
-        meta = r.get("metadata", {})
-        docs.append(NormalizedDoc(
-            source="firecrawl",
-            url=meta.get("sourceURL", ""),
-            title=meta.get("title", ""),
-            content=r.get("markdown", ""),
-            metadata=meta,
-        ))
-    return docs
-
-
-def from_tavily(response: dict) -> list[NormalizedDoc]:
-    docs = []
-    for r in response.get("results", []):
-        docs.append(NormalizedDoc(
-            source="tavily",
-            url=r.get("url", ""),
-            title=r.get("title", ""),
-            content=r.get("content", ""),
-            metadata={"score": r.get("score")},
         ))
     return docs
 

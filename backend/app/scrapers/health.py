@@ -83,7 +83,7 @@ def _title_body_rows(records: list[dict[str, Any]]) -> list[dict[str, str]]:
     if not records:
         return []
     sample = records[0]
-    already_normalized = sample.get("source") in ("brightdata", "firecrawl", "tavily")
+    already_normalized = sample.get("source") == "brightdata"
     if already_normalized:
         return [
             {"title": _field(r, "title"), "content": _field(r, "content", "body", "text")}

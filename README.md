@@ -77,9 +77,8 @@ curl -X POST https://healscrape-production.up.railway.app/query \
 
 | Endpoint | Needs Bright Data credits? | If credits = 0 |
 |----------|---------------------------|----------------|
-| `POST /scrape` (`brightdata`) | Yes | 502 with `customer is inactive` |
+| `POST /scrape` | Yes | 502 with `customer is inactive` |
 | `POST /heal` | Yes | Job completes with “trigger failed” + placeholder before-metrics |
-| `POST /scrape` (`firecrawl` / `tavily`) | No (separate free tiers) | Works if keys are set in Railway |
 
 ### Heal Lab (`/heal`) — please watch the demo video first
 
