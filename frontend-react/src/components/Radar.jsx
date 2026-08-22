@@ -1,18 +1,4 @@
-const SOURCES = [
-  { name: 'en.wikipedia.org', top: '10%', left: '50%' },
-  { name: 'weather.com', top: '14.6%', left: '68.6%' },
-  { name: 'docs.python.org', top: '27.3%', left: '82.9%' },
-  { name: 'fastapi.tiangolo.com', top: '45.2%', left: '89.7%' },
-  { name: 'react.dev', top: '64.2%', left: '87.4%' },
-  { name: 'techcrunch.com', top: '80%', left: '76.5%' },
-  { name: 'theverge.com', top: '88.8%', left: '59.6%' },
-  { name: 'venturebeat.com', top: '88.8%', left: '40.4%' },
-  { name: 'openai.com', top: '80%', left: '23.5%' },
-  { name: 'devpost.com', top: '64.2%', left: '12.6%' },
-  { name: 'remoteok.com', top: '45.2%', left: '10.3%' },
-  { name: 'github.com', top: '27.3%', left: '17.1%' },
-  { name: 'huggingface.co', top: '14.6%', left: '31.4%' },
-]
+import { RADAR_SOURCES } from '../collectors'
 
 export default function Radar({ size = 900 }) {
   return (
@@ -22,7 +8,7 @@ export default function Radar({ size = 900 }) {
       <div className="radar-ring r3" />
       <div className="radar-ring r4" />
       <div className="radar-sweep" />
-      {SOURCES.map((s, i) => (
+      {RADAR_SOURCES.map((s, i) => (
         <div
           className="node"
           key={s.name}

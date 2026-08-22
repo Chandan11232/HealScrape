@@ -3,20 +3,14 @@ import Navbar from './Navbar'
 import { Search, ExternalLink, Sparkles } from 'lucide-react'
 
 import { API_BASE, apiFetch } from '../api'
+import {
+  INDEXED_DOMAINS,
+  IN_SCOPE_EXAMPLES,
+  OUT_OF_SCOPE_EXAMPLES,
+} from '../collectors'
 
-const IN_SCOPE = [
-  'How does dependency injection work in FastAPI?',
-  'What is Depends used for in FastAPI?',
-  'What does the scraped Python docs say about the list type?',
-  'What are React Server Components, according to the scraped react.dev pages?',
-  'What is artificial intelligence, according to the Wikipedia page that was ingested?',
-  'What is a container, according to the scraped Docker docs?',
-  'What does the scraped Stripe API docs say about charges?',
-]
-
-const OUT_OF_SCOPE = [
-  'Who won the World Cup?',
-]
+const IN_SCOPE = IN_SCOPE_EXAMPLES
+const OUT_OF_SCOPE = OUT_OF_SCOPE_EXAMPLES
 
 const LOADING_STEPS = [
   'Embedding query vector',
@@ -33,12 +27,7 @@ export default function Console() {
   const [error, setError] = useState(null)
   const [chunkCount, setChunkCount] = useState(null)
   const [sourceFilter, setSourceFilter] = useState(null)
-  const [tags, setTags] = useState([
-    'en.wikipedia.org',
-    'fastapi.tiangolo.com',
-    'react.dev',
-    'docs.python.org',
-  ])
+  const [tags, setTags] = useState(INDEXED_DOMAINS)
   const abortRef = useRef(null)
 
   useEffect(() => {
@@ -158,7 +147,7 @@ export default function Console() {
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Ask about a scraped Wikipedia, weather, docs, or news page…"
+              placeholder="Ask about scraped docs, Wikipedia, GitHub READMEs, or news pages…"
               autoComplete="off"
             />
           </div>

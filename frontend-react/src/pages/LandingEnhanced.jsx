@@ -7,11 +7,7 @@ import {
   Wrench, BarChart3, BookOpen, Home,
 } from 'lucide-react'
 
-const DOMAINS = [
-  'en.wikipedia.org', 'weather.com', 'docs.python.org', 'fastapi.tiangolo.com',
-  'react.dev', 'techcrunch.com', 'theverge.com', 'venturebeat.com', 'openai.com',
-  'devpost.com', 'remoteok.com', 'github.com', 'huggingface.co',
-]
+import { INDEXED_DOMAINS } from '../collectors'
 
 const STATS = [
   { value: '13', label: 'Studio collectors' },
@@ -37,7 +33,7 @@ const STEPS = [
     num: '03 / TRANSMIT',
     icon: Shield,
     title: 'Answer',
-    desc: 'Questions retrieve chunks from your Bright Data collectors (and live Open-Meteo for named-city weather). Off-topic prompts are refused.',
+    desc: 'Questions retrieve chunks from your Bright Data collectors (and live Wikipedia for encyclopedia-style queries). Off-topic prompts are refused.',
   },
 ]
 
@@ -114,7 +110,7 @@ export default function LandingEnhanced() {
 
       <div className="strip">
         <div className="strip-track mono">
-          {[...DOMAINS, ...DOMAINS].map((d, i) => (
+          {[...INDEXED_DOMAINS, ...INDEXED_DOMAINS].map((d, i) => (
             <span className="strip-item" key={i}>{d}</span>
           ))}
         </div>

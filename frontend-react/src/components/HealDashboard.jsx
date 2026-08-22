@@ -7,26 +7,13 @@ import {
   TrendingDown,
 } from "lucide-react";
 import { API_BASE, apiFetch } from "../api";
+import { SCRAPER_URL_HINTS } from "../collectors";
 
 const ACTIVE_JOB_KEY = "heal_active_job_tag";
 const HISTORY_KEY = "heal_job_history";
 const POLL_MS = 3000;
 
-const URL_HINTS = {
-  wikipedia_ai: "https://en.wikipedia.org/wiki/Artificial_intelligence",
-  tiangolo: "https://fastapi.tiangolo.com/tutorial/dependencies/",
-  react: "https://react.dev/reference/rsc/server-components",
-  python_docs: "https://docs.python.org/3/tutorial/introduction.html",
-  openai: "https://openai.com/index/chatgpt/",
-  devpost: "https://devpost.com/software",
-  github_readme: "https://github.com/fastapi/fastapi",
-  mdn_web: "https://developer.mozilla.org/en-US/docs/Web/JavaScript",
-  docker_intro: "https://docs.docker.com/get-started/docker-concepts/the-basics/what-is-a-container/",
-  stripe_docs: "https://docs.stripe.com/api/charges",
-  wiki_javascript: "https://en.wikipedia.org/wiki/JavaScript",
-  anthropic_news: "https://www.anthropic.com/news/claude-3-family",
-  sqlite_docs: "https://www.sqlite.org/lang_select.html",
-};
+const URL_HINTS = SCRAPER_URL_HINTS;
 
 const STEP_LABELS = {
   queued: "Queued",
@@ -515,7 +502,7 @@ export default function HealDashboard() {
                 list="scraper-names"
                 value={formData.scraper_name}
                 onChange={handleChange}
-                placeholder="Any key from .env — e.g. tiangolo, theverge, wikipedia_ai"
+                placeholder="Any key from BRIGHTDATA_SCRAPERS — e.g. tiangolo, mdn_web, wikipedia_ai"
                 className="form-input"
                 required
               />
