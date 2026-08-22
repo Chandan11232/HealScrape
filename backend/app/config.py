@@ -34,8 +34,8 @@ class Settings:
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
     GROQ_MODEL: str = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
     GROQ_MAX_TOKENS: int = int(os.getenv("GROQ_MAX_TOKENS", "768"))
-    EMBED_BATCH_SIZE: int = int(os.getenv("EMBED_BATCH_SIZE", "64"))
-    CHROMA_UPSERT_BATCH: int = int(os.getenv("CHROMA_UPSERT_BATCH", "256"))
+    EMBED_BATCH_SIZE: int = int(os.getenv("EMBED_BATCH_SIZE", "8"))
+    CHROMA_UPSERT_BATCH: int = int(os.getenv("CHROMA_UPSERT_BATCH", "32"))
 
     # --- Storage ---
     RAW_DATA_DIR: str = "data/raw"

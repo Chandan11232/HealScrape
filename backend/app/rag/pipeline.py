@@ -238,9 +238,17 @@ def answer_query(query_text: str, top_k: int = 5, source_filter: str | None = No
 
 def ingest_documents(normalized_docs: list[dict]) -> dict:
     """Chunks + embeds + stores a batch of normalized docs."""
+    import gc
+
     from app.rag.chunker import chunk_documents
     from app.rag.vectorstore import add_chunks
-    chunks = chunk_documents(normalized_docs)
-    added = add_chunks(chunks)
+
+    added = 0
+    # Small slices so Railway 1–2GB boxes don't OOM on MiniLM.
+    step = 4
+    for i in range(0, len(normalized_docs), step):
+        chunks = chunk_documents(normalized_docs[i : i + step])
+        added += add_chunks(chunks)
+        gc.collect()
     clear_query_cache()
     return {"documents_in": len(normalized_docs), "chunks_added": added}
