@@ -129,7 +129,7 @@ export const IN_SCOPE_EXAMPLES = [
   'What is Depends used for in FastAPI?',
   'What does the scraped Python docs say about the list type?',
   'What are React Server Components, according to the scraped react.dev pages?',
-  'What is artificial intelligence, according to the Wikipedia page that was ingested?',
+  'What is artificial intelligence, according to Wikipedia?',
   'What is JavaScript, according to the scraped Wikipedia article?',
   'What is a container, according to the scraped Docker docs?',
   'What does the scraped Stripe API docs say about charges?',
