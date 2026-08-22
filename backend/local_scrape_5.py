@@ -123,10 +123,15 @@ def main():
         if method == "cached":
             if has_cache(tag):
                 docs = load_cache(tag)
-                # Cap content size for large cached docs
+                # Strip HTML and cap content size for large cached docs
                 for d in docs:
-                    if len(d.get("content", "")) > 10000:
-                        d["content"] = d["content"][:10000]
+                    c = d.get("content", "")
+                    if "<" in c:
+                        c = _strip_html(c)
+                    if len(c) > 10000:
+                        c = c[:10000]
+                    d["content"] = c
+                docs = [d for d in docs if d.get("content")]
                 print(f"  CACHED: {len(docs)} records")
             else:
                 print(f"  SKIP: no cache found")
