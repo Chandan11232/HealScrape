@@ -37,6 +37,20 @@ class IngestResponse(BaseModel):
     chunks_added: int
 
 
+class IngestAllRequest(BaseModel):
+    demo_only: bool = True  # main batch tags for Console examples; false = every normalized_*.json
+
+
+class IngestAllResponse(BaseModel):
+    job_tags: list[str]
+    documents_in: int
+    chunks_added: int
+    chunk_count: int
+    results: list[dict]
+    errors: list[dict] = []
+    message: str = ""
+
+
 class QueryRequest(BaseModel):
     query: str
     top_k: int = 5
