@@ -13,19 +13,19 @@ const HISTORY_KEY = "heal_job_history";
 const POLL_MS = 3000;
 
 const URL_HINTS = {
-  wikipedia_ai: "https://en.wikipedia.org/wiki/Dog",
-  weather: "https://weather.com/",
-  python: "https://docs.python.org/3/",
+  wikipedia_ai: "https://en.wikipedia.org/wiki/Artificial_intelligence",
   tiangolo: "https://fastapi.tiangolo.com/tutorial/dependencies/",
-  react: "https://react.dev/",
-  techcrunch: "https://techcrunch.com/",
-  theverge: "https://www.theverge.com/ai-artificial-intelligence/980160/apple-intelligence-china-custom-ai-model-alibaba",
-  venturebeat: "https://venturebeat.com/",
-  openai: "https://openai.com/",
-  devpost: "https://devpost.com/hackathons",
-  remoteok: "https://remoteok.com/",
-  github: "https://github.com/",
-  huggingface: "https://huggingface.co/",
+  react: "https://react.dev/reference/rsc/server-components",
+  python_docs: "https://docs.python.org/3/tutorial/introduction.html",
+  openai: "https://openai.com/index/chatgpt/",
+  devpost: "https://devpost.com/software",
+  github_readme: "https://github.com/fastapi/fastapi",
+  mdn_web: "https://developer.mozilla.org/en-US/docs/Web/JavaScript",
+  docker_intro: "https://docs.docker.com/get-started/docker-concepts/the-basics/what-is-a-container/",
+  stripe_docs: "https://docs.stripe.com/api/charges",
+  wiki_javascript: "https://en.wikipedia.org/wiki/JavaScript",
+  anthropic_news: "https://www.anthropic.com/news/claude-3-family",
+  sqlite_docs: "https://www.sqlite.org/lang_select.html",
 };
 
 const STEP_LABELS = {
@@ -36,9 +36,10 @@ const STEP_LABELS = {
   code_fixer: "AI rewriting selectors",
   control_preview_runner: "Testing on live page",
   planner: "Planning the fix",
-  user_approval: "Awaiting approval",
+  user_approval: "Review AI diff",
+  save_to_production: "Save to production",
   step_advance: "Advancing pipeline",
-  approving: "Auto-approving fix",
+  approving: "Applying accepted fix",
   applying_fix: "Applying fix",
   rescraping: "Re-scraping same collector",
   done: "Complete",
@@ -72,12 +73,19 @@ export default function HealDashboard() {
   const [jobHistory, setJobHistory] = useState(loadHistory);
   const [diagnosing, setDiagnosing] = useState(false);
   const [rescrapeAfter, setRescrapeAfter] = useState(true);
+  const [autoApprove, setAutoApprove] = useState(false);
+  const [updateSchema, setUpdateSchema] = useState(true);
+  const [collectorVersions, setCollectorVersions] = useState(null);
+  const [reviewBusy, setReviewBusy] = useState(false);
   const [urlHints, setUrlHints] = useState(URL_HINTS);
   const [batchRunning, setBatchRunning] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const pollRef = useRef(null);
 
-  const isHealing = (result?.status === "healing" || diagnosing) && !cancelling;
+  const isHealing =
+    (result?.status === "healing" || diagnosing) && !cancelling;
+  const needsReview = result?.status === "awaiting_review";
+  const needsPublish = result?.status === "draft_ready";
 
   const upsertHistory = useCallback((job) => {
     setJobHistory((prev) => {
@@ -185,6 +193,64 @@ export default function HealDashboard() {
     return stopPolling;
   }, [resumeActiveJob, stopPolling]);
 
+  useEffect(() => {
+    const name = formData.scraper_name.trim();
+    if (!name) {
+      setCollectorVersions(null);
+      return;
+    }
+    apiFetch(`/heal/collectors/${encodeURIComponent(name)}/versions`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => setCollectorVersions(data))
+      .catch(() => setCollectorVersions(null));
+  }, [formData.scraper_name]);
+
+  async function handleReview(approve, saveToProduction = false) {
+    const jobTag = result?.job_tag;
+    if (!jobTag || reviewBusy) return;
+    setReviewBusy(true);
+    setError(null);
+    try {
+      const res = await apiFetch(`/heal/${jobTag}/review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approve, save_to_production: saveToProduction }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || `Server returned ${res.status}`);
+      setResult(data);
+      if (data.status === "healing") startPolling(jobTag);
+      else upsertHistory(data);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setReviewBusy(false);
+    }
+  }
+
+  async function handleSaveProduction() {
+    const jobTag = result?.job_tag;
+    if (!jobTag || reviewBusy) return;
+    setReviewBusy(true);
+    setError(null);
+    try {
+      const res = await apiFetch(`/heal/${jobTag}/save-production`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ update_schema: updateSchema }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || `Server returned ${res.status}`);
+      setResult(data);
+      if (data.status === "healing") startPolling(jobTag);
+      else upsertHistory(data);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setReviewBusy(false);
+    }
+  }
+
   async function handleDiagnose(e) {
     e.preventDefault();
     setError(null);
@@ -203,6 +269,7 @@ export default function HealDashboard() {
           job_tag: jobTag,
           force_heal: false,
           rescrape_after: rescrapeAfter,
+          auto_approve: autoApprove,
         }),
       });
       if (!res.ok) {
@@ -231,6 +298,7 @@ export default function HealDashboard() {
       job_tag: jobTag,
       force_heal: true,
       rescrape_after: rescrapeAfter,
+      auto_approve: autoApprove,
     };
 
     try {
@@ -421,9 +489,8 @@ export default function HealDashboard() {
           <div className="eyebrow mono">Auto-Healing</div>
           <h1 className="mono">Scraper Self-Heal Lab</h1>
           <p className="heal-subtitle">
-            Live diagnose scrape → Bright Data AI heal on the same <code>c_*</code> →
-            live re-scrape for authentic before/after metrics. Scraper name = any key from{" "}
-            <code>BRIGHTDATA_SCRAPERS</code>.
+            Diagnose scrape → review AI diff (like Scraper Studio) → accept to draft →
+            save to production → live re-scrape for before/after metrics.
           </p>
         </div>
       </header>
@@ -507,6 +574,38 @@ export default function HealDashboard() {
               </label>
             </div>
 
+            <div className="form-group">
+              <label className="form-label mono checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={autoApprove}
+                  onChange={(e) => setAutoApprove(e.target.checked)}
+                  disabled={isHealing}
+                />
+                Auto-approve (skip manual diff review — like CLI --auto-approve)
+              </label>
+            </div>
+
+            {collectorVersions && (
+              <div className="versions-panel">
+                <div className="form-label mono">Collector & versions</div>
+                <div className="versions-meta mono">
+                  <a href={collectorVersions.collector_url} target="_blank" rel="noreferrer">
+                    Open in Bright Data
+                  </a>
+                  {" · "}
+                  <a href={collectorVersions.versions_url} target="_blank" rel="noreferrer">
+                    Versions / rollback
+                  </a>
+                </div>
+                {collectorVersions.recent_jobs?.length > 0 && (
+                  <div className="versions-jobs mono">
+                    Recent runs: {collectorVersions.recent_jobs.slice(0, 3).map((j) => j.job_id).join(", ")}
+                  </div>
+                )}
+              </div>
+            )}
+
             <button type="button" disabled={isHealing} className="heal-btn" onClick={handleDiagnose}>
               {diagnosing ? (
                 <>
@@ -579,6 +678,22 @@ export default function HealDashboard() {
                       </div>
                     </div>
                   </>
+                ) : result.status === "awaiting_review" ? (
+                  <>
+                    <AlertCircle size={24} className="status-icon healing" />
+                    <div>
+                      <div className="result-status">Review required</div>
+                      <div className="result-job-tag mono">{result.job_tag}</div>
+                    </div>
+                  </>
+                ) : result.status === "draft_ready" ? (
+                  <>
+                    <CheckCircle2 size={24} className="status-icon healing" />
+                    <div>
+                      <div className="result-status">Draft ready — publish when satisfied</div>
+                      <div className="result-job-tag mono">{result.job_tag}</div>
+                    </div>
+                  </>
                 ) : result.status === "failed" ? (
                   <>
                     <AlertCircle size={24} className="status-icon failed" />
@@ -609,6 +724,111 @@ export default function HealDashboard() {
                   </div>
                   <div className="step-bar">
                     <div className="step-bar-fill" />
+                  </div>
+                </div>
+              )}
+
+              {(needsReview || needsPublish) && (
+                <div className="review-panel">
+                  <div className="review-title mono">
+                    {needsReview ? "Review AI proposal" : "Save to production"}
+                  </div>
+                  {result.proposal?.schema_changes?.has_changes && (
+                    <div className="schema-alert">
+                      <div className="mono">Schema update required</div>
+                      {result.proposal.schema_changes.added_fields?.length > 0 && (
+                        <div>Added: {result.proposal.schema_changes.added_fields.join(", ")}</div>
+                      )}
+                      {result.proposal.schema_changes.removed_fields?.length > 0 && (
+                        <div>Removed: {result.proposal.schema_changes.removed_fields.join(", ")}</div>
+                      )}
+                    </div>
+                  )}
+                  {result.proposal?.diff && (
+                    <details className="diff-block">
+                      <summary className="mono">Code diff</summary>
+                      <pre>{JSON.stringify(result.proposal.diff, null, 2)}</pre>
+                    </details>
+                  )}
+                  {result.proposal?.preview?.length > 0 && (
+                    <details className="diff-block" open>
+                      <summary className="mono">Extraction preview</summary>
+                      <pre>{JSON.stringify(result.proposal.preview, null, 2)}</pre>
+                    </details>
+                  )}
+                  {needsReview && (
+                    <div className="review-actions">
+                      <button
+                        type="button"
+                        className="heal-btn secondary"
+                        disabled={reviewBusy}
+                        onClick={() => handleReview(false)}
+                      >
+                        Decline
+                      </button>
+                      <button
+                        type="button"
+                        className="heal-btn secondary"
+                        disabled={reviewBusy}
+                        onClick={() => handleReview(true, false)}
+                      >
+                        Accept to draft
+                      </button>
+                      <button
+                        type="button"
+                        className="heal-btn"
+                        disabled={reviewBusy}
+                        onClick={() => handleReview(true, true)}
+                      >
+                        Accept & save to production
+                      </button>
+                    </div>
+                  )}
+                  {needsPublish && (
+                    <div className="review-actions">
+                      <label className="form-label mono checkbox-row">
+                        <input
+                          type="checkbox"
+                          checked={updateSchema}
+                          onChange={(e) => setUpdateSchema(e.target.checked)}
+                        />
+                        Update output schema (Bright Data docs step)
+                      </label>
+                      <button
+                        type="button"
+                        className="heal-btn"
+                        disabled={reviewBusy}
+                        onClick={handleSaveProduction}
+                      >
+                        Save to production
+                      </button>
+                      {result.collector_url && (
+                        <a
+                          className="mono dashboard-link"
+                          href={result.collector_url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Or finish in Bright Data IDE →
+                        </a>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {result.status === "awaiting_review" && result.step && (
+                <div className="step-pipeline">
+                  <div className="step-label mono">
+                    Step: {STEP_LABELS[result.step] || result.step}
+                  </div>
+                </div>
+              )}
+
+              {result.status === "draft_ready" && result.step && (
+                <div className="step-pipeline">
+                  <div className="step-label mono">
+                    Step: {STEP_LABELS[result.step] || result.step}
                   </div>
                 </div>
               )}
@@ -748,6 +968,10 @@ export default function HealDashboard() {
                 <div className={`job-status ${job.status}`}>
                   {job.status === "completed"
                     ? "Complete"
+                    : job.status === "awaiting_review"
+                      ? "Review"
+                      : job.status === "draft_ready"
+                        ? "Draft"
                     : job.status === "failed"
                       ? "Failed"
                       : "Healing"}
@@ -1266,6 +1490,77 @@ export default function HealDashboard() {
           color: var(--signal);
           font-weight: 600;
           font-size: 11px;
+        }
+
+        .versions-panel {
+          padding: 12px;
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          background: rgba(0, 0, 0, 0.2);
+          font-size: 12px;
+        }
+
+        .versions-meta a {
+          color: var(--signal);
+        }
+
+        .versions-jobs {
+          margin-top: 8px;
+          color: var(--text-dim);
+          font-size: 11px;
+        }
+
+        .review-panel {
+          margin: 16px 0;
+          padding: 16px;
+          border: 1px solid rgba(57, 255, 158, 0.35);
+          border-radius: 8px;
+          background: rgba(57, 255, 158, 0.04);
+        }
+
+        .review-title {
+          font-weight: 600;
+          margin-bottom: 12px;
+        }
+
+        .schema-alert {
+          margin-bottom: 12px;
+          padding: 10px;
+          border-radius: 6px;
+          background: rgba(255, 193, 7, 0.1);
+          font-size: 12px;
+        }
+
+        .diff-block {
+          margin-bottom: 12px;
+        }
+
+        .diff-block pre {
+          max-height: 220px;
+          overflow: auto;
+          font-size: 11px;
+          padding: 10px;
+          background: rgba(0, 0, 0, 0.35);
+          border-radius: 6px;
+        }
+
+        .review-actions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 10px;
+          align-items: center;
+          margin-top: 12px;
+        }
+
+        .dashboard-link {
+          color: var(--signal);
+          font-size: 12px;
+        }
+
+        .job-status.awaiting_review,
+        .job-status.draft_ready {
+          background: rgba(255, 193, 7, 0.1);
+          color: #ffc107;
         }
       `}</style>
     </div>

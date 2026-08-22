@@ -26,6 +26,13 @@ class HealRequest(BaseModel):
             "If false, uses Bright Data heal preview when available (faster, less accurate)."
         ),
     )
+    auto_approve: bool = Field(
+        False,
+        description=(
+            "If true, skip manual diff review and auto-approve like the CLI --auto-approve flag. "
+            "Default false matches Bright Data docs: review diff, accept/decline, then save to production."
+        ),
+    )
 
 
 class HealthMetrics(BaseModel):
@@ -35,9 +42,70 @@ class HealthMetrics(BaseModel):
     success_rate: float = Field(..., description="Overall extraction success rate")
 
 
+class SchemaChanges(BaseModel):
+    """Output schema diff between production and heal preview."""
+    has_changes: bool = False
+    added_fields: list[str] = Field(default_factory=list)
+    removed_fields: list[str] = Field(default_factory=list)
+    production_fields: list[str] = Field(default_factory=list)
+    preview_fields: list[str] = Field(default_factory=list)
+
+
+class HealProposal(BaseModel):
+    """Bright Data self-heal proposal shown at user_approval."""
+    diff: dict | None = None
+    preview: list[dict] = Field(default_factory=list)
+    schema_changes: SchemaChanges | None = None
+    step: str | None = None
+    status: str | None = None
+
+
+class HealReviewRequest(BaseModel):
+    """POST /heal/{job_tag}/review — accept or decline the AI diff."""
+    approve: bool
+    save_to_production: bool = Field(
+        False,
+        description="When approving: true = accept and publish (auto_save), false = accept to draft only",
+    )
+
+
+class HealSaveRequest(BaseModel):
+    """POST /heal/{job_tag}/save-production — publish an accepted draft."""
+    update_schema: bool = Field(
+        True,
+        description="Acknowledge output schema changes before publishing (Bright Data docs step)",
+    )
+
+
+class CollectorVersionInfo(BaseModel):
+    job_id: str
+    status: str
+    finished: str | None = None
+    data_lines: int | None = None
+    failed_pages: int | None = None
+
+
+class CollectorVersionsResponse(BaseModel):
+    scraper_name: str
+    collector_id: str
+    collector_url: str
+    versions_url: str
+    active: bool | None = None
+    last_run: str | None = None
+    output_schema: dict | None = None
+    recent_jobs: list[CollectorVersionInfo] = Field(default_factory=list)
+    rollback_note: str = (
+        "Bright Data version rollback is managed in the scraper dashboard Versions menu. "
+        "Use versions_url to open it."
+    )
+
+
 class HealResponse(BaseModel):
     """POST /heal and GET /heal/{job_tag} response body."""
-    status: str = Field(..., description="'healing', 'completed', or 'failed'")
+    status: str = Field(
+        ...,
+        description="'healing', 'awaiting_review', 'draft_ready', 'completed', or 'failed'",
+    )
     job_tag: str = Field(..., description="Job tracking ID")
     before: HealthMetrics = Field(..., description="Health metrics before healing")
     after: Optional[HealthMetrics] = Field(None, description="After metrics; null until measured")
@@ -54,6 +122,10 @@ class HealResponse(BaseModel):
         None,
         description="Where after came from: rescrape | preview | none | skipped_healthy | unchanged",
     )
+    proposal: HealProposal | None = None
+    saved_to_production: bool = False
+    schema_update_required: bool = False
+    collector_url: str | None = None
 
 
 class BatchHealRequest(BaseModel):
@@ -69,4 +141,8 @@ class BatchHealRequest(BaseModel):
     rescrape_after: bool = Field(
         True,
         description="Live re-scrape after heal for authentic after-metrics",
+    )
+    auto_approve: bool = Field(
+        False,
+        description="Skip manual review and auto-approve proposals (CLI --auto-approve style)",
     )

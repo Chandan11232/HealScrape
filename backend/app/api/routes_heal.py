@@ -17,7 +17,18 @@ import time
 from fastapi import APIRouter, HTTPException
 
 from app.config import settings
-from app.models.heal_schemas import HealRequest, HealResponse, HealthMetrics, BatchHealRequest
+from app.models.heal_schemas import (
+    HealRequest,
+    HealResponse,
+    HealthMetrics,
+    BatchHealRequest,
+    HealProposal,
+    SchemaChanges,
+    HealReviewRequest,
+    HealSaveRequest,
+    CollectorVersionsResponse,
+    CollectorVersionInfo,
+)
 from app.scrapers.catalog import example_url_for, SITEMAP_SCRAPER_NAMES
 from app.scrapers.health import (
     get_current_health,
@@ -33,12 +44,19 @@ from app.scrapers.scrape_runner import run_brightdata_scrape
 from app.scrapers.self_heal import (
     trigger_heal,
     fetch_heal_progress,
+    approve_heal,
     auto_approve_heal,
     reject_heal,
     progress_message,
     normalize_status,
     preview_records,
     preview_looks_usable,
+    build_proposal,
+    fetch_collector_info,
+    list_collector_jobs,
+    publish_collector_to_production,
+    collector_cp_url,
+    collector_versions_url,
     DONE_STATUSES,
     FAIL_STATUSES,
     APPROVE_STATUSES,
@@ -71,6 +89,20 @@ def _to_response(job_tag: str) -> HealResponse:
     message = job.get("message", "")
     if job["status"] == "healing":
         message = f"{message} ({elapsed}s elapsed)"
+
+    proposal_raw = job.get("proposal")
+    proposal = None
+    if proposal_raw:
+        schema = proposal_raw.get("schema_changes") or {}
+        proposal = HealProposal(
+            diff=proposal_raw.get("diff"),
+            preview=proposal_raw.get("preview") or [],
+            schema_changes=SchemaChanges(**schema) if schema else None,
+            step=proposal_raw.get("step"),
+            status=proposal_raw.get("status"),
+        )
+
+    collector_id = job.get("collector_id") or job.get("heal_job_id")
     return HealResponse(
         status=job["status"],
         job_tag=job_tag,
@@ -83,6 +115,10 @@ def _to_response(job_tag: str) -> HealResponse:
         scraper_name=job.get("scraper_name"),
         before_source=job.get("before_source"),
         after_source=job.get("after_source"),
+        proposal=proposal,
+        saved_to_production=bool(job.get("saved_to_production")),
+        schema_update_required=bool(job.get("schema_update_required")),
+        collector_url=collector_cp_url(collector_id) if collector_id else None,
     )
 
 
@@ -449,12 +485,42 @@ async def _maybe_retry_heal(job_tag: str, reason: str) -> bool:
     return True
 
 
+async def _pause_for_review(job_tag: str, data: dict) -> None:
+    job = heal_jobs[job_tag]
+    collector_id = job["collector_id"]
+    if not job.get("production_schema"):
+        info = await fetch_collector_info(collector_id)
+        if info:
+            _set_job(job_tag, production_schema=info.get("output_schema"))
+            job = heal_jobs[job_tag]
+    preview = preview_records(data)
+    if preview:
+        _set_job(job_tag, preview_records=preview)
+    proposal = build_proposal(data, job.get("production_schema"))
+    changes = proposal.get("schema_changes") or {}
+    _set_job(
+        job_tag,
+        status="awaiting_review",
+        step="user_approval",
+        message=(
+            "AI proposal ready — review the code diff and extraction preview. "
+            "Accept to draft, accept & publish, or decline."
+        ),
+        proposal=proposal,
+        schema_update_required=bool(changes.get("has_changes")),
+    )
+
+
 async def _handle_pending_answer(job_tag: str, data: dict) -> None:
     job = heal_jobs[job_tag]
     collector_id = job["collector_id"]
     preview = preview_records(data)
     if preview:
         _set_job(job_tag, preview_records=preview)
+
+    if not job.get("auto_approve"):
+        await _pause_for_review(job_tag, data)
+        return
 
     usable = preview_looks_usable(data)
     if not usable:
@@ -491,7 +557,13 @@ async def _handle_pending_answer(job_tag: str, data: dict) -> None:
                 use_preview=False,
             )
             return
-        _set_job(job_tag, approved=True, phase="poll", message="Fix approved — saving collector...")
+        _set_job(
+            job_tag,
+            approved=True,
+            saved_to_production=True,
+            phase="poll",
+            message="Fix auto-approved — saving to production...",
+        )
 
 
 async def _advance_heal_step(job_tag: str) -> None:
@@ -645,6 +717,18 @@ async def _advance_heal_step(job_tag: str) -> None:
         return
 
     if status in DONE_STATUSES:
+        if job.get("approved") and not job.get("saved_to_production"):
+            _set_job(
+                job_tag,
+                status="draft_ready",
+                step="save_to_production",
+                bd_success=True,
+                message=(
+                    "Fix accepted to draft on Bright Data. "
+                    "Update schema if fields changed, then save to production."
+                ),
+            )
+            return
         if preview_looks_usable(data) or (data.get("success") is True and not preview):
             _set_job(job_tag, bd_success=True)
             _complete_after_bright_data(job_tag)
@@ -738,7 +822,8 @@ async def _heal_loop(job_tag: str) -> None:
 
 
 def _ensure_loop(job_tag: str) -> None:
-    if job_tag in heal_jobs and heal_jobs[job_tag]["status"] == "healing":
+    job = heal_jobs.get(job_tag)
+    if job and job.get("status") == "healing":
         asyncio.create_task(_heal_loop(job_tag))
 
 
@@ -753,6 +838,7 @@ def start_heal_job(
     before: HealthMetrics | None = None,
     force_heal: bool = True,
     rescrape_after: bool = False,
+    auto_approve: bool = False,
 ) -> HealResponse:
     existing = heal_jobs.get(job_tag)
     if existing and existing.get("status") == "healing":
@@ -843,6 +929,7 @@ def start_heal_job(
         "approved": False,
         "force_heal": force_heal,
         "rescrape_after": rescrape_after,
+        "auto_approve": auto_approve,
         "heal_attempts": 0,
         "bd_success": False,
         "started_at": time.time(),
@@ -868,6 +955,7 @@ async def heal_endpoint(req: HealRequest):
         skip_diagnose=req.skip_diagnose,
         force_heal=req.force_heal,
         rescrape_after=req.rescrape_after,
+        auto_approve=req.auto_approve,
     )
 
 
@@ -922,6 +1010,7 @@ async def heal_batch(req: BatchHealRequest):
                         job_tag=job_tag,
                         force_heal=req.force_heal,
                         rescrape_after=req.rescrape_after,
+                        auto_approve=req.auto_approve,
                     )
                     while heal_jobs.get(job_tag, {}).get("status") == "healing":
                         await asyncio.sleep(settings.HEAL_POLL_SECONDS)
@@ -950,6 +1039,127 @@ async def get_heal_status(job_tag: str):
 
 
 _ZERO = HealthMetrics(empty_title_pct=0.0, empty_body_pct=0.0, success_rate=0.0)
+
+
+@router.get("/heal/collectors/{scraper_name}/versions", response_model=CollectorVersionsResponse)
+async def collector_versions(scraper_name: str):
+    collector_id = settings.BRIGHTDATA_SCRAPERS.get(scraper_name)
+    if not collector_id:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown scraper_name '{scraper_name}'. Available: {list(settings.BRIGHTDATA_SCRAPERS.keys())}",
+        )
+    info = await fetch_collector_info(collector_id) or {}
+    jobs = await list_collector_jobs(collector_id)
+    recent = [
+        CollectorVersionInfo(
+            job_id=str(row.get("id", "")),
+            status=str(row.get("status", "")),
+            finished=row.get("finished"),
+            data_lines=row.get("data_lines"),
+            failed_pages=row.get("failed_pages"),
+        )
+        for row in jobs
+        if row.get("id")
+    ]
+    return CollectorVersionsResponse(
+        scraper_name=scraper_name,
+        collector_id=collector_id,
+        collector_url=collector_cp_url(collector_id),
+        versions_url=collector_versions_url(collector_id),
+        active=info.get("active"),
+        last_run=info.get("last_run"),
+        output_schema=info.get("output_schema"),
+        recent_jobs=recent,
+    )
+
+
+@router.post("/heal/{job_tag}/review", response_model=HealResponse)
+async def review_heal(job_tag: str, req: HealReviewRequest):
+    if job_tag not in heal_jobs:
+        raise HTTPException(status_code=404, detail=f"Job {job_tag} not found")
+    job = heal_jobs[job_tag]
+    if job.get("status") != "awaiting_review":
+        raise HTTPException(status_code=409, detail=f"Job is not awaiting review (status={job.get('status')}).")
+
+    collector_id = job["collector_id"]
+    if not req.approve:
+        await reject_heal(collector_id)
+        _finish_unchanged(job_tag, "Heal proposal declined. Collector left unchanged.", use_preview=False)
+        return _to_response(job_tag)
+
+    approve_result = await approve_heal(collector_id, auto_save=req.save_to_production)
+    if approve_result["status"] == "error":
+        raise HTTPException(status_code=502, detail=approve_result["message"])
+
+    _set_job(
+        job_tag,
+        status="healing",
+        approved=True,
+        saved_to_production=bool(req.save_to_production),
+        phase="poll",
+        step="applying_fix",
+        message=approve_result["message"],
+    )
+    _ensure_loop(job_tag)
+    return _to_response(job_tag)
+
+
+@router.post("/heal/{job_tag}/save-production", response_model=HealResponse)
+async def save_heal_to_production(job_tag: str, req: HealSaveRequest):
+    if job_tag not in heal_jobs:
+        raise HTTPException(status_code=404, detail=f"Job {job_tag} not found")
+    job = heal_jobs[job_tag]
+    if job.get("status") != "draft_ready":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Job is not ready to publish (status={job.get('status')}). Accept the fix to draft first.",
+        )
+
+    collector_id = job["collector_id"]
+    if req.update_schema and job.get("schema_update_required"):
+        _set_job(job_tag, message="Publishing draft and acknowledging schema update...")
+
+    publish = await publish_collector_to_production(collector_id)
+    if publish.get("status") == "published":
+        _set_job(
+            job_tag,
+            status="healing",
+            saved_to_production=True,
+            phase="poll",
+            step="rescraping" if job.get("rescrape_after") else "done",
+            message=publish["message"],
+            bd_success=True,
+        )
+        if job.get("rescrape_after"):
+            _set_job(job_tag, phase="rescrape")
+        else:
+            preview_after = _after_from_preview(job)
+            if preview_after is not None:
+                _finish(
+                    job_tag,
+                    after=preview_after,
+                    after_source="preview",
+                    message=f"{publish['message']} After metrics from heal preview.",
+                )
+            else:
+                _finish(
+                    job_tag,
+                    after=job["before"],
+                    after_source="unchanged",
+                    message=f"{publish['message']} Re-scrape skipped.",
+                )
+        _ensure_loop(job_tag)
+    else:
+        _set_job(
+            job_tag,
+            message=(
+                f"{publish['message']} "
+                f"Open {publish.get('collector_url') or collector_cp_url(collector_id)}"
+            ),
+        )
+
+    return _to_response(job_tag)
 
 
 @router.post("/heal/{job_tag}/cancel", response_model=HealResponse)

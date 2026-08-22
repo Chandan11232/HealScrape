@@ -65,6 +65,7 @@ async def scrape(req: ScrapeRequest):
                     success_rate=float(metrics["success_rate"]),
                 ),
                 rescrape_after=False,
+                auto_approve=True,
             )
             heal_started = True
             message = (

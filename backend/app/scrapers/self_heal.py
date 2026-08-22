@@ -44,7 +44,7 @@ STEP_MESSAGES = {
     "request_fulfillment_validator": "Checking extraction quality...",
     "css_selector_extractor": "Updating CSS selectors...",
     "agent_picker": "AI choosing the best fix strategy...",
-    "user_approval": "Fix ready — auto-approving...",
+    "user_approval": "Fix ready — review the diff and preview...",
     "step_advance": "Advancing heal pipeline...",
     "save_new_template": "Saving healed collector template...",
 }
@@ -58,7 +58,7 @@ def progress_message(data: dict) -> str:
     if status in ACTIVE_STATUSES:
         return f"Bright Data AI working ({step or status})..."
     if status in APPROVE_STATUSES:
-        return "AI proposal ready — auto-approving..."
+        return "AI proposal ready — review diff and preview, then accept or decline."
     if status in DONE_STATUSES:
         return "Heal completed on Bright Data"
     if status in FAIL_STATUSES:
@@ -397,7 +397,162 @@ async def poll_heal_status(
     }
 
 
-async def auto_approve_heal(collector_id: str) -> Dict[str, Any]:
+def extract_diff(data: dict) -> dict | None:
+    """Code diff from Bright Data progress at user_approval."""
+    diff = data.get("diff")
+    if isinstance(diff, dict):
+        return diff
+    before = data.get("before_template") or data.get("old_template")
+    after = data.get("after_template") or data.get("new_template")
+    if before is not None or after is not None:
+        return {"before": before, "after": after}
+    return None
+
+
+def _schema_field_names(schema: dict | None) -> set[str]:
+    if not schema or not isinstance(schema, dict):
+        return set()
+    fields = schema.get("fields")
+    if isinstance(fields, dict):
+        return {str(k) for k in fields.keys()}
+    return set()
+
+
+def _preview_field_names(records: list[dict]) -> set[str]:
+    names: set[str] = set()
+    for row in records:
+        if isinstance(row, dict):
+            names.update(str(k) for k in row.keys())
+    skip = {"input", "error", "warning", "product_page_url", "url"}
+    return {n for n in names if n not in skip}
+
+
+def schema_changes(production_schema: dict | None, records: list[dict]) -> dict:
+    """Compare production output_schema vs heal preview fields."""
+    prod = _schema_field_names(production_schema)
+    preview = _preview_field_names(records)
+    added = sorted(preview - prod)
+    removed = sorted(prod - preview)
+    return {
+        "has_changes": bool(added or removed),
+        "added_fields": added,
+        "removed_fields": removed,
+        "production_fields": sorted(prod),
+        "preview_fields": sorted(preview),
+    }
+
+
+def build_proposal(data: dict, production_schema: dict | None = None) -> dict:
+    preview = preview_records(data)
+    changes = schema_changes(production_schema, preview)
+    return {
+        "diff": extract_diff(data),
+        "preview": preview,
+        "schema_changes": changes,
+        "step": data.get("step"),
+        "status": data.get("status"),
+    }
+
+
+def collector_cp_url(collector_id: str) -> str:
+    return f"https://brightdata.com/cp/scrapers/{collector_id}"
+
+
+def collector_versions_url(collector_id: str) -> str:
+    return f"https://brightdata.com/cp/scrapers/{collector_id}?tab=versions"
+
+
+async def fetch_collector_info(collector_id: str) -> dict | None:
+    """Lookup collector metadata from collectors_list."""
+    if not BRIGHTDATA_API_KEY or collector_id.startswith("mock"):
+        return None
+    try:
+        resp = await _client().get(
+            f"{BRIGHTDATA_BASE_URL}/dca/collectors_list",
+            headers=_headers(),
+            params={"search": collector_id},
+        )
+        resp.raise_for_status()
+        body = resp.json()
+        for row in body.get("data") or []:
+            if row.get("id") == collector_id:
+                return row
+    except Exception:
+        pass
+    return None
+
+
+async def list_collector_jobs(collector_id: str, limit: int = 8) -> list[dict]:
+    """Recent collection runs — closest public proxy to a version history."""
+    if not BRIGHTDATA_API_KEY or collector_id.startswith("mock"):
+        return []
+    from datetime import date, timedelta
+
+    today = date.today()
+    start = today - timedelta(days=30)
+    try:
+        resp = await _client().get(
+            f"{BRIGHTDATA_BASE_URL}/dca/collector/jobs",
+            headers=_headers(),
+            params={
+                "collector": collector_id,
+                "from_date": start.isoformat(),
+                "to_date": today.isoformat(),
+                "limit": limit,
+                "sort_asc": -1,
+            },
+        )
+        resp.raise_for_status()
+        body = resp.json()
+        return body.get("data") or []
+    except Exception:
+        return []
+
+
+async def publish_collector_to_production(collector_id: str) -> dict:
+    """
+    Try known publish endpoints. Bright Data docs primarily expose publish via
+    auto_save on approve; fallback is the scraper dashboard.
+    """
+    if not BRIGHTDATA_API_KEY or collector_id.startswith("mock"):
+        return {
+            "status": "mock",
+            "message": "Mock publish — no Bright Data API call",
+            "collector_url": collector_cp_url(collector_id),
+        }
+
+    candidates = [
+        (f"{BRIGHTDATA_BASE_URL}/dca/collectors/{collector_id}/save_to_production", {}),
+        (f"{BRIGHTDATA_BASE_URL}/dca/collectors/{collector_id}/publish", {}),
+        (f"{BRIGHTDATA_BASE_URL}/dca/collector/{collector_id}/save", {}),
+    ]
+    last_err = ""
+    for url, body in candidates:
+        try:
+            resp = await _client().post(url, json=body, headers=_headers())
+            if resp.status_code < 400:
+                return {
+                    "status": "published",
+                    "message": "Collector saved to production via Bright Data API.",
+                    "collector_url": collector_cp_url(collector_id),
+                }
+            last_err = resp.text[:300]
+        except Exception as e:
+            last_err = str(e)
+
+    return {
+        "status": "manual",
+        "message": (
+            "No publish API responded successfully. Open the Bright Data scraper dashboard, "
+            "click Update schema if prompted, then Save to production."
+        ),
+        "collector_url": collector_cp_url(collector_id),
+        "versions_url": collector_versions_url(collector_id),
+        "detail": last_err[:200] if last_err else None,
+    }
+
+
+async def approve_heal(collector_id: str, *, auto_save: bool = False) -> Dict[str, Any]:
     if not BRIGHTDATA_API_KEY or collector_id.startswith("mock"):
         return {
             "status": "approved",
@@ -409,14 +564,20 @@ async def auto_approve_heal(collector_id: str) -> Dict[str, Any]:
     try:
         resp = await _client().post(
             url,
-            json={"message": True, "auto_save": True},
+            json={"message": True, "auto_save": auto_save},
             headers=_headers(),
         )
         resp.raise_for_status()
+        msg = (
+            "Heal approved — saving to production..."
+            if auto_save
+            else "Heal accepted to draft — review preview, then save to production."
+        )
         return {
             "status": "approved",
             "heal_job_id": collector_id,
-            "message": "Heal approved, applying fix...",
+            "message": msg,
+            "auto_save": auto_save,
         }
     except Exception as e:
         return {
@@ -424,6 +585,11 @@ async def auto_approve_heal(collector_id: str) -> Dict[str, Any]:
             "heal_job_id": collector_id,
             "message": f"Failed to approve heal: {e}",
         }
+
+
+async def auto_approve_heal(collector_id: str) -> Dict[str, Any]:
+    """Backward-compatible wrapper used by unattended scrape auto-heal."""
+    return await approve_heal(collector_id, auto_save=True)
 
 
 async def wait_for_completion(

@@ -14,8 +14,8 @@ _ENCYCLOPEDIA = re.compile(
 
 # Site names that should stay on scraped RAG, not live Wikipedia.
 _OTHER_SITES = re.compile(
-    r"\b(fastapi|tiangolo|react\.dev|techcrunch|the verge|venturebeat|"
-    r"openai|devpost|remoteok|github|huggingface|python docs|docs\.python)\b",
+    r"\b(fastapi|tiangolo|react\.dev|openai|devpost|github|python docs|"
+    r"docs\.python|docker|stripe|mdn|mozilla|sqlite|anthropic|javascript)\b",
     re.I,
 )
 

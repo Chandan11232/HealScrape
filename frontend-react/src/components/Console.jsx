@@ -9,9 +9,9 @@ const IN_SCOPE = [
   'What is Depends used for in FastAPI?',
   'What does the scraped Python docs say about the list type?',
   'What are React Server Components, according to the scraped react.dev pages?',
-  'What did the scraped TechCrunch or The Verge articles say about AI?',
   'What is artificial intelligence, according to the Wikipedia page that was ingested?',
-  'What are the best efficient models according to huggingface?',
+  'What is a container, according to the scraped Docker docs?',
+  'What does the scraped Stripe API docs say about charges?',
 ]
 
 const OUT_OF_SCOPE = [
@@ -35,7 +35,9 @@ export default function Console() {
   const [sourceFilter, setSourceFilter] = useState(null)
   const [tags, setTags] = useState([
     'en.wikipedia.org',
-    'weather.com',
+    'fastapi.tiangolo.com',
+    'react.dev',
+    'docs.python.org',
   ])
   const abortRef = useRef(null)
 

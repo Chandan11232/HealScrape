@@ -13,21 +13,7 @@ INDEXED_SOURCES = [
         "scraper_name": "wikipedia_ai",
         "kind": "encyclopedia",
         "covers": "Wikipedia articles that were scraped",
-        "example_url": "https://en.wikipedia.org/wiki/Dog",
-    },
-    {
-        "domain": "weather.com",
-        "scraper_name": "weather",
-        "kind": "weather",
-        "covers": "Current conditions and forecast pages that were scraped",
-        "example_url": "https://weather.com/",
-    },
-    {
-        "domain": "docs.python.org",
-        "scraper_name": "python",
-        "kind": "docs",
-        "covers": "Python language and standard-library documentation",
-        "example_url": "https://docs.python.org/3/",
+        "example_url": "https://en.wikipedia.org/wiki/Artificial_intelligence",
     },
     {
         "domain": "fastapi.tiangolo.com",
@@ -41,109 +27,92 @@ INDEXED_SOURCES = [
         "scraper_name": "react",
         "kind": "docs",
         "covers": "React documentation",
-        "example_url": "https://react.dev/",
+        "example_url": "https://react.dev/reference/rsc/server-components",
     },
     {
-        "domain": "techcrunch.com",
-        "scraper_name": "techcrunch",
-        "kind": "news",
-        "covers": "TechCrunch articles that were scraped",
-        "example_url": "https://techcrunch.com/",
-    },
-    {
-        "domain": "theverge.com",
-        "scraper_name": "theverge",
-        "kind": "news",
-        "covers": "The Verge articles that were scraped",
-        "example_url": "https://www.theverge.com/ai-artificial-intelligence/980160/apple-intelligence-china-custom-ai-model-alibaba",
-    },
-    {
-        "domain": "venturebeat.com",
-        "scraper_name": "venturebeat",
-        "kind": "news",
-        "covers": "VentureBeat articles that were scraped",
-        "example_url": "https://venturebeat.com/",
+        "domain": "docs.python.org",
+        "scraper_name": "python_docs",
+        "kind": "docs",
+        "covers": "Python tutorial pages that were scraped",
+        "example_url": "https://docs.python.org/3/tutorial/introduction.html",
     },
     {
         "domain": "openai.com",
         "scraper_name": "openai",
         "kind": "blog",
         "covers": "OpenAI public pages that were scraped",
-        "example_url": "https://openai.com/",
+        "example_url": "https://openai.com/index/chatgpt/",
     },
     {
         "domain": "devpost.com",
         "scraper_name": "devpost",
         "kind": "listings",
-        "covers": "hackathon listings that were scraped",
-        "example_url": "https://devpost.com/hackathons",
-    },
-    {
-        "domain": "remoteok.com",
-        "scraper_name": "remoteok",
-        "kind": "jobs",
-        "covers": "remote job listings that were scraped",
-        "example_url": "https://remoteok.com/",
+        "covers": "hackathon project listings that were scraped",
+        "example_url": "https://devpost.com/software",
     },
     {
         "domain": "github.com",
-        "scraper_name": "github",
+        "scraper_name": "github_readme",
         "kind": "code",
-        "covers": "GitHub pages that were scraped",
-        "example_url": "https://github.com/",
+        "covers": "GitHub repository README pages that were scraped",
+        "example_url": "https://github.com/fastapi/fastapi",
     },
     {
-        "domain": "huggingface.co",
-        "scraper_name": "huggingface",
+        "domain": "developer.mozilla.org",
+        "scraper_name": "mdn_web",
         "kind": "docs",
-        "covers": "Hugging Face pages that were scraped",
-        "example_url": "https://huggingface.co/",
+        "covers": "MDN Web Docs pages that were scraped",
+        "example_url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript",
+    },
+    {
+        "domain": "docs.docker.com",
+        "scraper_name": "docker_intro",
+        "kind": "docs",
+        "covers": "Docker concept pages that were scraped",
+        "example_url": "https://docs.docker.com/get-started/docker-concepts/the-basics/what-is-a-container/",
+    },
+    {
+        "domain": "docs.stripe.com",
+        "scraper_name": "stripe_docs",
+        "kind": "docs",
+        "covers": "Stripe API documentation that was scraped",
+        "example_url": "https://docs.stripe.com/api/charges",
+    },
+    {
+        "domain": "en.wikipedia.org",
+        "scraper_name": "wiki_javascript",
+        "kind": "encyclopedia",
+        "covers": "Wikipedia JavaScript article that was scraped",
+        "example_url": "https://en.wikipedia.org/wiki/JavaScript",
+    },
+    {
+        "domain": "www.anthropic.com",
+        "scraper_name": "anthropic_news",
+        "kind": "blog",
+        "covers": "Anthropic news posts that were scraped",
+        "example_url": "https://www.anthropic.com/news/claude-3-family",
+    },
+    {
+        "domain": "www.sqlite.org",
+        "scraper_name": "sqlite_docs",
+        "kind": "docs",
+        "covers": "SQLite language reference pages that were scraped",
+        "example_url": "https://www.sqlite.org/lang_select.html",
     },
 ]
 
-INDEXED_DOMAINS = [s["domain"] for s in INDEXED_SOURCES]
+INDEXED_DOMAINS = list(dict.fromkeys(s["domain"] for s in INDEXED_SOURCES))
 
 # Collectors whose Bright Data heal API rejects {"url": ...} in custom_input.
 # Heal still passes the test URL inside the prompt text.
-PROMPT_ONLY_HEAL_SCRAPERS = frozenset(
-    {
-        "theverge",
-        "python",
-        "techcrunch",
-        "venturebeat",
-        "huggingface",
-        "weather",
-        "openai",
-        "remoteok",
-    }
-)
+PROMPT_ONLY_HEAL_SCRAPERS = frozenset({"openai", "devpost"})
 
 SCRAPER_BY_NAME = {s["scraper_name"]: s for s in INDEXED_SOURCES}
 
 # Bright Data Collection API inputs for collectors that reject plain {"url": ...}.
 # Sitemap URLs verified via each site's robots.txt (not guessed /sitemap.xml paths).
-SITEMAP_SCRAPE_INPUTS: dict[str, dict[str, str]] = {
-    "theverge": {
-        "sitemap_url": "https://www.theverge.com/sitemaps/google_news",
-        "url_pattern": ".*",
-    },
-    "techcrunch": {
-        "sitemap_url": "https://techcrunch.com/news-sitemap.xml",
-        "url_pattern": ".*",
-    },
-    "venturebeat": {
-        "sitemap_url": "https://venturebeat.com/news-sitemap.xml",
-        "url_pattern": ".*",
-    },
-    "python": {
-        "sitemap_url": "https://docs.python.org/sitemap.xml",
-        "url_pattern": ".*",
-    },
-    "huggingface": {
-        "sitemap_url": "https://huggingface.co/sitemap.xml",
-        "url_pattern": ".*",
-    },
-}
+# Intentionally empty — these collectors are single-page only (credit-safe).
+SITEMAP_SCRAPE_INPUTS: dict[str, dict[str, str]] = {}
 
 SITEMAP_SCRAPER_NAMES = frozenset(SITEMAP_SCRAPE_INPUTS.keys())
 
@@ -207,32 +176,31 @@ def heal_trigger_payloads(scraper_name: str, prompt: str, test_url: str) -> list
 # Longer aliases first so "the verge" matches before a bare token.
 _QUERY_ALIASES = (
     ("fastapi.tiangolo.com", "fastapi.tiangolo.com"),
+    ("developer.mozilla.org", "developer.mozilla.org"),
     ("docs.python.org", "docs.python.org"),
+    ("docs.docker.com", "docs.docker.com"),
+    ("docs.stripe.com", "docs.stripe.com"),
+    ("www.anthropic.com", "www.anthropic.com"),
+    ("www.sqlite.org", "www.sqlite.org"),
     ("en.wikipedia.org", "en.wikipedia.org"),
-    ("huggingface.co", "huggingface.co"),
-    ("techcrunch.com", "techcrunch.com"),
-    ("theverge.com", "theverge.com"),
-    ("venturebeat.com", "venturebeat.com"),
-    ("weather.com", "weather.com"),
     ("react.dev", "react.dev"),
     ("openai.com", "openai.com"),
     ("devpost.com", "devpost.com"),
-    ("remoteok.com", "remoteok.com"),
     ("github.com", "github.com"),
-    ("tech crunch", "techcrunch.com"),
-    ("techcrunch", "techcrunch.com"),
-    ("the verge", "theverge.com"),
-    ("venturebeat", "venturebeat.com"),
+    ("javascript", "en.wikipedia.org"),
     ("wikipedia", "en.wikipedia.org"),
-    ("huggingface", "huggingface.co"),
     ("tiangolo", "fastapi.tiangolo.com"),
     ("fastapi", "fastapi.tiangolo.com"),
     ("python docs", "docs.python.org"),
-    ("weather", "weather.com"),
+    ("sqlite", "www.sqlite.org"),
+    ("stripe", "docs.stripe.com"),
+    ("docker", "docs.docker.com"),
+    ("anthropic", "www.anthropic.com"),
+    ("mdn", "developer.mozilla.org"),
+    ("mozilla", "developer.mozilla.org"),
     ("react", "react.dev"),
     ("openai", "openai.com"),
     ("devpost", "devpost.com"),
-    ("remoteok", "remoteok.com"),
     ("github", "github.com"),
     ("python", "docs.python.org"),
 )
