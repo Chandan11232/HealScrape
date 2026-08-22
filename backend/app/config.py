@@ -37,7 +37,7 @@ class Settings:
     # --- Storage ---
     RAW_DATA_DIR: str = "data/raw"
     PROCESSED_DATA_DIR: str = "data/processed"
-    CHROMA_PERSIST_DIR: str = "data/chroma"
+    CHROMA_PERSIST_DIR: str = os.getenv("CHROMA_PERSIST_DIR", "data/chroma")
 
     # --- Safety limits so free tiers never get exceeded ---
     MAX_PAGES_PER_SCRAPE: int = 20
