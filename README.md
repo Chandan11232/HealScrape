@@ -52,13 +52,6 @@ curl https://healscrape-production.up.railway.app/knowledge
 
 ---
 
-## Demo Video
-
-**[Watch the 3-minute demo](#)** — shows the full pipeline: scrape → ingest → query → heal → verify.
-
-> *Video covers: live scraping with Bright Data, RAG query with cited sources, self-healing broken collectors with before/after metrics.*
-
----
 
 ## How Bright Data Scraper Studio Is Used
 
