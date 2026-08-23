@@ -95,19 +95,12 @@ def post_to_railway(job_tag: str, docs: list[dict]) -> dict | None:
     if not RAILWAY_URL:
         return None
     import httpx
-    BATCH = 1
-    total_chunks = 0
-    total_docs = 0
     try:
-        for i in range(0, len(docs), BATCH):
-            batch = docs[i:i+BATCH]
-            r = httpx.post(f"{RAILWAY_URL}/ingest", json={"job_tag": job_tag, "documents": batch}, timeout=300)
-            r.raise_for_status()
-            resp = r.json()
-            total_chunks += resp.get("chunks_added", 0)
-            total_docs += resp.get("documents_in", 0)
-            print(f"  -> batch {i//BATCH+1}: {resp}")
-        return {"documents_in": total_docs, "chunks_added": total_chunks}
+        r = httpx.post(f"{RAILWAY_URL}/ingest", json={"job_tag": job_tag, "documents": docs}, timeout=300)
+        r.raise_for_status()
+        resp = r.json()
+        print(f"  -> ingest: {resp}")
+        return {"documents_in": resp.get("documents_in", 0), "chunks_added": resp.get("chunks_added", 0)}
     except Exception as e:
         print(f"  WARN railway ingest failed: {e}")
         return None
