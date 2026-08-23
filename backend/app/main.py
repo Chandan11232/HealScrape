@@ -41,10 +41,18 @@ def _ping_groq() -> None:
         pass
 
 
+def _startup_tasks() -> None:
+    from app.seed_data import maybe_reingest_local, maybe_seed_from_env
+
+    maybe_seed_from_env()
+    maybe_reingest_local()
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     await asyncio.to_thread(_warm_embeddings)
     asyncio.create_task(asyncio.to_thread(_ping_groq))
+    asyncio.create_task(asyncio.to_thread(_startup_tasks))
     yield
 
 

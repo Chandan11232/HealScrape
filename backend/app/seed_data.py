@@ -22,20 +22,16 @@ from app.rag.vectorstore import collection_stats
 
 logger = logging.getLogger(__name__)
 
-# Covers Console in-scope example questions (main batch scrapes only).
+# Job tags that power Console in-scope example questions (13 small collectors).
 DEMO_JOB_TAGS = [
-    "wikipedia_ai_batch1",
-    "fastapi_test",
-    "tiangolo_batch1",
-    "python_docs_batch1",
-    "react_batch1",
-    "techcrunch_batch1",
-    "theverge_batch1",
-    "venturebeat_batch1",
-    "openai_batch1",
-    "devpost_batch1",
-    "remoteok_batch1",
-    "huggingface_heal_1787149870617",
+    "demo_tiangolo",
+    "demo_react",
+    "demo_python",
+    "demo_openai",
+    "demo_mdn",
+    "demo_docker",
+    "demo_stripe",
+    "demo_wiki_js",
 ]
 
 
@@ -119,6 +115,18 @@ def _download_and_extract(url: str) -> None:
         logger.info("Extracted seed data into %s", processed_dir.parent)
     finally:
         Path(tmp_path).unlink(missing_ok=True)
+
+
+def maybe_reingest_local(*, demo_only: bool = True) -> None:
+    """If Chroma is empty but normalized JSON exists on disk, ingest it (needs a Railway volume)."""
+    if collection_stats().get("count", 0) > 0:
+        return
+    tags = list_job_tags(demo_only=demo_only)
+    if not tags:
+        return
+    logger.info("Chroma empty — re-ingesting %d local job tag(s)", len(tags))
+    summary = ingest_all(demo_only=demo_only)
+    logger.info("Local re-ingest: %s", summary.get("message"))
 
 
 def maybe_seed_from_env() -> None:
