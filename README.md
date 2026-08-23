@@ -32,7 +32,7 @@ SIGNAL closes the loop: **scrape → detect degradation → auto-fix → verify*
 |-----------|-----|
 | **Backend API** | https://healscrape-production.up.railway.app |
 | **Swagger UI** | https://healscrape-production.up.railway.app/docs |
-| **Frontend** | https://signal-sage.vercel.app |
+| **Frontend** | https://heal-scrape.vercel.app |
 
 ### Quick Test (No API Keys Required)
 
