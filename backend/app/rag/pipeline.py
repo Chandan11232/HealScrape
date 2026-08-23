@@ -247,7 +247,7 @@ def ingest_documents(normalized_docs: list[dict]) -> dict:
     # Small slices so Railway 1–2GB boxes don't OOM on MiniLM.
     step = 4
     for i in range(0, len(normalized_docs), step):
-        chunks = chunk_documents(normalized_docs[i : i + step])
+        chunks = chunk_documents(normalized_docs[i : i + step], offset=i)
         added += add_chunks(chunks)
         gc.collect()
     clear_query_cache()

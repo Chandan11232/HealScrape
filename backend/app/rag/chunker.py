@@ -56,15 +56,16 @@ def chunk_text(text: str, chunk_size: int = 800, overlap: int = 150) -> list[str
     return chunks
 
 
-def chunk_documents(docs: list[dict], chunk_size: int = 800, overlap: int = 150) -> list[Chunk]:
-    """docs: list of normalized doc dicts (source, url, title, content, metadata)."""
+def chunk_documents(docs: list[dict], chunk_size: int = 800, overlap: int = 150, offset: int = 0) -> list[Chunk]:
+    """docs: list of normalized doc dicts (source, url, title, content, metadata).
+    offset: global document index offset for unique IDs across batches."""
     all_chunks = []
     for doc_index, doc in enumerate(docs):
         text_chunks = chunk_text(doc.get("content", ""), chunk_size, overlap)
         # Use doc_index in the ID so multiple docs sharing the same URL
         # (e.g. per-section scrapes of one page) never collide in the vector store.
         doc_url = doc.get("url", "")
-        doc_key = f"{doc_url or 'unknown'}#{doc_index}"
+        doc_key = f"{doc_url or 'unknown'}#{doc_index + offset}"
         domain = _domain(doc_url)
         for i, text in enumerate(text_chunks):
             all_chunks.append(Chunk(
