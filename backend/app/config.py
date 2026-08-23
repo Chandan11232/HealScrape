@@ -48,7 +48,7 @@ class Settings:
 
     # Heal path: give Bright Data AI enough time; keep scrapes bounded.
     SCRAPE_POLL_INTERVAL: int = int(os.getenv("SCRAPE_POLL_INTERVAL", "2"))
-    HEAL_SCRAPE_TIMEOUT: int = int(os.getenv("HEAL_SCRAPE_TIMEOUT", "150"))
+    HEAL_SCRAPE_TIMEOUT: int = int(os.getenv("HEAL_SCRAPE_TIMEOUT", "300"))
     HEAL_SCRAPE_RETRIES: int = int(os.getenv("HEAL_SCRAPE_RETRIES", "1"))
     HEAL_POLL_SECONDS: int = int(os.getenv("HEAL_POLL_SECONDS", "2"))
     # BD AI (code_fixer etc.) often needs 5–12 minutes — do not soft-abort at 2–3 min.
